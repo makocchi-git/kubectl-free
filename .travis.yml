@@ -1,0 +1,28 @@
+language: go
+
+go:
+  - 1.12.6
+
+env:
+  - GO111MODULE=on
+
+install: true
+
+before_script:
+  - go install github.com/golangci/golangci-lint/cmd/golangci-lint
+
+script:
+  - golangci-lint run -E stylecheck -E gocritic
+  - diff -u <(echo -n) <(gofmt -d .)
+  - go test -v -race -coverprofile coverage.txt $(go list ./... | grep -v /constants | grep -v /cmd/kubectl-free)
+
+after_script:
+  - bash <(curl -s https://codecov.io/bash)
+
+deploy:
+  - provider: script
+    skip_cleanup: true
+    script: curl -sL https://git.io/goreleaser | bash
+    on:
+      tags: true
+ 
