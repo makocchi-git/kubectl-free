@@ -71,6 +71,11 @@ kubectl free --emoji
 kubectl free --list --emoji
 ```
 
+## Notice
+
+This plugin shows just sum of requested(limited) resources, **not a real usage**.  
+I recommend to use `kubectl free` with `kubectl top`.
+
 ## License
 
 This software is released under the MIT License.
