@@ -297,7 +297,7 @@ func TestPrepare(t *testing.T) {
 	t.Run("prepare allnamespace", func(t *testing.T) {
 
 		o := &FreeOptions{
-			configFlags: genericclioptions.NewConfigFlags(true),
+			configFlags:   genericclioptions.NewConfigFlags(true),
 			allNamespaces: true,
 		}
 
@@ -791,14 +791,14 @@ func TestShowFree(t *testing.T) {
 
 		buffer := &bytes.Buffer{}
 		o := &FreeOptions{
-			nocolor:    true,
-			table:      table.NewOutputTable(buffer),
-			list:       false,
-			pod:        false,
-			nodeClient: fakeNodeClient.CoreV1().Nodes(),
-			podClient:  fakePodClient.CoreV1().Pods(""),
+			nocolor:       true,
+			table:         table.NewOutputTable(buffer),
+			list:          false,
+			pod:           false,
+			nodeClient:    fakeNodeClient.CoreV1().Nodes(),
+			podClient:     fakePodClient.CoreV1().Pods(""),
 			allNamespaces: true,
-			header:     "none",
+			header:        "none",
 		}
 
 		if err := o.showFree([]v1.Node{testNodes[0]}); err != nil {
