@@ -42,8 +42,11 @@ $ kubectl free
 ## Usage
 
 ```shell
-# Show pod resource usage of Kubernetes nodes.
+# Show pod resource usage of Kubernetes nodes (default namespace is "default").
 kubectl free
+
+# Show pod resource usage of Kubernetes nodes (all namespaces).
+kubectl free --all-namespaces
 
 # Show pod resource usage of Kubernetes nodes with number of pods and containers.
 kubectl free --pod
