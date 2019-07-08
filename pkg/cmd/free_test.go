@@ -79,7 +79,7 @@ var testPods = []v1.Pod{
 			Phase: v1.PodRunning,
 		},
 		Spec: v1.PodSpec{
-			NodeName: "node2",
+			NodeName: "node1",
 			Containers: []v1.Container{
 				{
 					Name:  "container2a",
@@ -98,6 +98,39 @@ var testPods = []v1.Pod{
 				{
 					Name:  "container2b",
 					Image: "busybox:latest",
+				},
+			},
+		},
+	},
+	{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod3",
+			Namespace: "awesome-ns",
+		},
+		Status: v1.PodStatus{
+			PodIP: "2.3.4.5",
+			Phase: v1.PodRunning,
+		},
+		Spec: v1.PodSpec{
+			NodeName: "node1",
+			Containers: []v1.Container{
+				{
+					Name:  "container3a",
+					Image: "centos:7",
+					Resources: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(200, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(300, resource.DecimalSI),
+						},
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(200, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(300, resource.DecimalSI),
+						},
+					},
+				},
+				{
+					Name:  "container3b",
+					Image: "ubuntu:bionic",
 				},
 			},
 		},
@@ -254,6 +287,32 @@ func TestPrepare(t *testing.T) {
 		o := &FreeOptions{
 			configFlags: genericclioptions.NewConfigFlags(true),
 		}
+
+		if err := o.Prepare(); err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+	})
+
+	t.Run("prepare allnamespace", func(t *testing.T) {
+
+		o := &FreeOptions{
+			configFlags:   genericclioptions.NewConfigFlags(true),
+			allNamespaces: true,
+		}
+
+		if err := o.Prepare(); err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+	})
+
+	t.Run("prepare specific namespace", func(t *testing.T) {
+
+		o := &FreeOptions{
+			configFlags: genericclioptions.NewConfigFlags(true),
+		}
+		*o.configFlags.Namespace = "awesome-ns"
 
 		if err := o.Prepare(); err != nil {
 			t.Errorf("unexpected error: %v", err)
@@ -658,12 +717,14 @@ func TestShowFree(t *testing.T) {
 	var tests = []struct {
 		description string
 		pod         bool
+		namespace   string
 		expected    []string
 		expectedErr error
 	}{
 		{
 			"default free",
 			false,
+			"default",
 			[]string{
 				"node1   NotReady   1     4     25%   1K    4K    25%",
 				"",
@@ -673,8 +734,19 @@ func TestShowFree(t *testing.T) {
 		{
 			"default free --pod",
 			true,
+			"default",
 			[]string{
 				"node1   NotReady   1     4     25%   1K    4K    25%   1     110   1",
+				"",
+			},
+			nil,
+		},
+		{
+			"awesome-ns free",
+			true,
+			"awesome-ns",
+			[]string{
+				"node1   NotReady   200m   4     5%    0K    4K    7%    1     110   2",
 				"",
 			},
 			nil,
@@ -685,7 +757,7 @@ func TestShowFree(t *testing.T) {
 		t.Run(test.description, func(t *testing.T) {
 
 			fakeNodeClient := fake.NewSimpleClientset(&testNodes[0])
-			fakePodClient := fake.NewSimpleClientset(&testPods[0])
+			fakePodClient := fake.NewSimpleClientset(&testPods[0], &testPods[2])
 
 			buffer := &bytes.Buffer{}
 			o := &FreeOptions{
@@ -694,7 +766,7 @@ func TestShowFree(t *testing.T) {
 				list:       false,
 				pod:        test.pod,
 				nodeClient: fakeNodeClient.CoreV1().Nodes(),
-				podClient:  fakePodClient.CoreV1().Pods(""),
+				podClient:  fakePodClient.CoreV1().Pods(test.namespace),
 				header:     "none",
 			}
 
@@ -711,6 +783,40 @@ func TestShowFree(t *testing.T) {
 
 		})
 	}
+
+	t.Run("Allnamespace", func(t *testing.T) {
+
+		fakeNodeClient := fake.NewSimpleClientset(&testNodes[0])
+		fakePodClient := fake.NewSimpleClientset(&testPods[0], &testPods[1], &testPods[2])
+
+		buffer := &bytes.Buffer{}
+		o := &FreeOptions{
+			nocolor:       true,
+			table:         table.NewOutputTable(buffer),
+			list:          false,
+			pod:           false,
+			nodeClient:    fakeNodeClient.CoreV1().Nodes(),
+			podClient:     fakePodClient.CoreV1().Pods(""),
+			allNamespaces: true,
+			header:        "none",
+		}
+
+		if err := o.showFree([]v1.Node{testNodes[0]}); err != nil {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
+
+		expected := []string{
+			"node1   NotReady   1700m   4     42%   2K    4K    57%",
+			"",
+		}
+		e := strings.Join(expected, "\n")
+		if buffer.String() != e {
+			t.Errorf("expected(%s) differ (got: %s)", e, buffer.String())
+			return
+		}
+
+	})
 }
 
 func TestListPodsOnNode(t *testing.T) {

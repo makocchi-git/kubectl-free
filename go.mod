@@ -3,7 +3,12 @@ module github.com/makocchi-git/kubectl-free
 go 1.12
 
 require (
+	github.com/MakeNowJust/heredoc v0.0.0-20171113091838-e9091a26100e // indirect
+	github.com/docker/docker v0.0.0-00010101000000-000000000000 // indirect
 	github.com/gookit/color v1.1.7
+	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
+	github.com/mitchellh/go-wordwrap v1.0.0 // indirect
+	github.com/russross/blackfriday v0.0.0-00010101000000-000000000000 // indirect
 	github.com/spf13/cobra v0.0.2
 	github.com/spf13/pflag v1.0.1
 	k8s.io/api v0.0.0-20190531132109-d3f5f50bdd94

@@ -29,8 +29,11 @@ var (
 
 	// DfExample defines command examples
 	freeExample = templates.Examples(`
-		# Show pod resource usage of Kubernetes nodes.
+		# Show pod resource usage of Kubernetes nodes (default namespace is "default").
 		kubectl free
+
+		# Show pod resource usage of Kubernetes nodes (all namespaces).
+		kubectl free --all-namespaces
 
 		# Show pod resource usage of Kubernetes nodes with number of pods and containers.
 		kubectl free --pod
@@ -70,6 +73,7 @@ type FreeOptions struct {
 	header        string
 	pod           bool
 	emojiStatus   bool
+	allNamespaces bool
 
 	// unit options
 	bytes       bool
@@ -120,6 +124,7 @@ func NewFreeOptions(streams genericclioptions.IOStreams) *FreeOptions {
 		emojiStatus:        false,
 		table:              table.NewOutputTable(os.Stdout),
 		header:             "default",
+		allNamespaces:      false,
 	}
 }
 
@@ -165,6 +170,7 @@ func NewCmdFree(streams genericclioptions.IOStreams, version, commit, date strin
 	cmd.Flags().BoolVarP(&o.listContainerImage, "list-image", "", o.listContainerImage, `Show pod list on node with container image.`)
 	cmd.Flags().BoolVarP(&o.listAll, "list-all", "", o.listAll, `Show pods even if they have no requests/limit`)
 	cmd.Flags().BoolVarP(&o.emojiStatus, "emoji", "", o.emojiStatus, `Let's smile!! 😃 😭`)
+	cmd.Flags().BoolVarP(&o.allNamespaces, "all-namespaces", "", o.allNamespaces, `If present, list pod resources(limits) across all namespaces. Namespace in current context is ignored even if specified with --namespace.`)
 
 	// int64 options
 	cmd.Flags().Int64VarP(&o.warnThreshold, "warn-threshold", "", o.warnThreshold, `Threshold of warn(yellow) color for USED column.`)
@@ -199,7 +205,18 @@ func (o *FreeOptions) Prepare() error {
 	o.nodeClient = client.CoreV1().Nodes()
 
 	// pod client
-	o.podClient = client.CoreV1().Pods(*o.configFlags.Namespace)
+	if o.allNamespaces {
+		// --all-namespace flag
+		o.podClient = client.CoreV1().Pods(v1.NamespaceAll)
+	} else {
+		if *o.configFlags.Namespace == "" {
+			// default namespace is "default"
+			o.podClient = client.CoreV1().Pods(v1.NamespaceDefault)
+		} else {
+			// targeted namespace (--namespace flag)
+			o.podClient = client.CoreV1().Pods(*o.configFlags.Namespace)
+		}
+	}
 
 	// prepare table header
 	o.prepareFreeTableHeader()
