@@ -80,6 +80,9 @@ var testPods = []v1.Pod{
 				},
 			},
 		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+		},
 	},
 	{
 		ObjectMeta: metav1.ObjectMeta{
@@ -116,6 +119,36 @@ var testPods = []v1.Pod{
 					},
 				},
 			},
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+		},
+	},
+	{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod3",
+			Namespace: "default",
+		},
+		Spec: v1.PodSpec{
+			NodeName: "node3",
+			Containers: []v1.Container{
+				{
+					Name: "container3",
+					Resources: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(300, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(300, resource.DecimalSI),
+						},
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(300, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(300, resource.DecimalSI),
+						},
+					},
+				},
+			},
+		},
+		Status: v1.PodStatus{
+			Phase: v1.PodFailed,
 		},
 	},
 }
@@ -474,13 +507,15 @@ func TestGetPods(t *testing.T) {
 func TestGetPodResources(t *testing.T) {
 
 	//                            cpu/ mem           cpu/ mem
-	// pod1 container1 [requests 1000/1000] [limits 2000/2000]
-	// pod2 container1 [requests  500/1000] [limits  500/1000]
-	// pod2 container2 [requests   50/ 100] [limits   50/ 100]
+	// pod1 container1  : Running [requests 1000/1000] [limits 2000/2000]
+	// pod2 container2a : Running [requests  500/1000] [limits  500/1000]
+	// pod2 container2b : Running [requests   50/ 100] [limits   50/ 100]
+	// pod3 container3  : Failed  [requests  300/ 300] [limits  300/ 300]
 	pods := v1.PodList{
 		Items: []v1.Pod{
 			testPods[0],
 			testPods[1],
+			testPods[2],
 		},
 	}
 

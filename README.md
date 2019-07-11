@@ -20,7 +20,7 @@ node3   Ready    455m      2           22%     52428K    3503149K    1%
 And list containers of pod on Kubernetes node(s).
 
 ```shell
-$ kubectl free --list node1
+$ kubectl free --list node1 --namespace kube-system
 NODE NAME   POD                                   POD IP        POD STATUS   NAMESPACE     CONTAINER            CPU/req   CPU/lim   MEM/req   MEM/lim
 node1       calico-node-sml6z                     10.8.2.87     Running      kube-system   calico-node          250m      -         -         -
 node1       coredns-5695fb77c8-knc6d              10.112.1.3    Running      kube-system   coredns              100m      -         73400K    178257K
