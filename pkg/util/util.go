@@ -228,6 +228,12 @@ func GetPodResources(pods v1.PodList) (int64, int64, int64, int64) {
 	var rc, rm, lc, lm int64
 
 	for _, pod := range pods.Items {
+
+		// skip if pod status is not running
+		if pod.Status.Phase != v1.PodRunning {
+			continue
+		}
+
 		for _, container := range pod.Spec.Containers {
 			rc += container.Resources.Requests.Cpu().MilliValue()
 			lc += container.Resources.Limits.Cpu().MilliValue()
