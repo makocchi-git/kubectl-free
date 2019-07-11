@@ -49,6 +49,9 @@ var testPods = []v1.Pod{
 			Name:      "pod1",
 			Namespace: "default",
 		},
+		Status: v1.PodStatus{
+			Phase: v1.PodRunning,
+		},
 		Spec: v1.PodSpec{
 			NodeName: "node1",
 			Containers: []v1.Container{
@@ -391,7 +394,7 @@ func TestRun(t *testing.T) {
 			[]string{},
 			true,
 			[]string{
-				"node1   pod1         Unknown   default   container1   1     2     1K    2K",
+				"node1   pod1         Running   default   container1   1     2     1K    2K",
 				"",
 			},
 			nil,
@@ -410,7 +413,7 @@ func TestRun(t *testing.T) {
 				table:      table.NewOutputTable(buffer),
 				list:       test.list,
 				nodeClient: fakeNodeClient.CoreV1().Nodes(),
-				podClient:  fakePodClient.CoreV1().Pods(""),
+				podClient:  fakePodClient.CoreV1().Pods("default"),
 				header:     "none",
 			}
 
