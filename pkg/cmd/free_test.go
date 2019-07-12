@@ -17,6 +17,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	fake "k8s.io/client-go/kubernetes/fake"
+	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
+	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 )
 
 // test node object
@@ -174,7 +176,13 @@ func TestNewFreeOptions(t *testing.T) {
 
 func TestNewCmdFree(t *testing.T) {
 
+	cmdtesting.InitTestErrorHandler(t)
+	tf := cmdtesting.NewTestFactory()
+	defer tf.Cleanup()
+	tf.ClientConfigVal = cmdtesting.DefaultClientConfig()
+
 	rootCmd := NewCmdFree(
+		tf,
 		genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr},
 		"v0.0.1",
 		"abcd123",
@@ -223,101 +231,61 @@ func TestNewCmdFree(t *testing.T) {
 			return
 		}
 	})
-
-	// RunE Validation error 1
-	t.Run("RunE validation error 1", func(t *testing.T) {
-
-		c := NewCmdFree(
-			genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr},
-			"v0.0.1",
-			"abcd123",
-			"1234567890",
-		)
-
-		err := c.ParseFlags([]string{"--crit-threshold=5"})
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-			return
-		}
-
-		rerr := c.RunE(c, []string{})
-		if rerr == nil {
-			t.Errorf("unexpected error: should return error")
-			return
-		}
-
-		expected := "can not set critical threshold less than warn threshold (warn:25 crit:5)"
-		if rerr.Error() != expected {
-			t.Errorf("expected(%s) differ (got: %s)", expected, rerr.Error())
-			return
-		}
-	})
-
-	// RunE Validation error 2
-	t.Run("RunE validation error 2", func(t *testing.T) {
-
-		c := NewCmdFree(
-			genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr},
-			"v0.0.1",
-			"abcd123",
-			"1234567890",
-		)
-
-		err := c.ParseFlags([]string{"--header", "hogehoge"})
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-			return
-		}
-
-		rerr := c.RunE(c, []string{})
-		if rerr == nil {
-			t.Errorf("unexpected error: should return error")
-			return
-		}
-
-		expected := "invalid header option: hogehoge"
-		if rerr.Error() != expected {
-			t.Errorf("expected(%s) differ (got: %s)", expected, rerr.Error())
-			return
-		}
-	})
 }
 
-func TestPrepare(t *testing.T) {
+func TestComplete(t *testing.T) {
 
-	t.Run("prepare", func(t *testing.T) {
+	cmdtesting.InitTestErrorHandler(t)
+	tf := cmdtesting.NewTestFactory()
+	defer tf.Cleanup()
+	tf.ClientConfigVal = cmdtesting.DefaultClientConfig()
+
+	rootCmd := NewCmdFree(
+		tf,
+		genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr},
+		"v0.0.1",
+		"abcd123",
+		"1234567890",
+	)
+
+	kubeConfigFlags := genericclioptions.NewConfigFlags(true).WithDeprecatedPasswordFlag()
+	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(kubeConfigFlags)
+
+	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
+
+	t.Run("complete", func(t *testing.T) {
 
 		o := &FreeOptions{
 			configFlags: genericclioptions.NewConfigFlags(true),
 		}
 
-		if err := o.Prepare(); err != nil {
+		if err := o.Complete(f, rootCmd, []string{}); err != nil {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}
 	})
 
-	t.Run("prepare allnamespace", func(t *testing.T) {
+	t.Run("complete allnamespace", func(t *testing.T) {
 
 		o := &FreeOptions{
 			configFlags:   genericclioptions.NewConfigFlags(true),
 			allNamespaces: true,
 		}
 
-		if err := o.Prepare(); err != nil {
+		if err := o.Complete(f, rootCmd, []string{}); err != nil {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}
 	})
 
-	t.Run("prepare specific namespace", func(t *testing.T) {
+	t.Run("complete specific namespace", func(t *testing.T) {
 
 		o := &FreeOptions{
 			configFlags: genericclioptions.NewConfigFlags(true),
 		}
 		*o.configFlags.Namespace = "awesome-ns"
 
-		if err := o.Prepare(); err != nil {
+		if err := o.Complete(f, rootCmd, []string{}); err != nil {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}

@@ -13,8 +13,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/client-go/kubernetes"
 	clientv1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/util/templates"
 
 	// Initialize all known client auth plugins.
@@ -129,31 +129,19 @@ func NewFreeOptions(streams genericclioptions.IOStreams) *FreeOptions {
 }
 
 // NewCmdFree is a cobra command wrapping
-func NewCmdFree(streams genericclioptions.IOStreams, version, commit, date string) *cobra.Command {
+func NewCmdFree(f cmdutil.Factory, streams genericclioptions.IOStreams, version, commit, date string) *cobra.Command {
 	o := NewFreeOptions(streams)
 
 	cmd := &cobra.Command{
-		Use:     fmt.Sprintf("kubectl free"),
+		Use:     "kubectl free",
 		Short:   "Show various requested resources on Kubernetes nodes.",
 		Long:    freeLong,
 		Example: freeExample,
 		Version: version,
-		RunE: func(c *cobra.Command, args []string) error {
-			c.SilenceUsage = true
-
-			if err := o.Validate(); err != nil {
-				return err
-			}
-
-			if err := o.Prepare(); err != nil {
-				return err
-			}
-
-			if err := o.Run(args); err != nil {
-				return err
-			}
-
-			return nil
+		Run: func(c *cobra.Command, args []string) {
+			cmdutil.CheckErr(o.Complete(f, c, args))
+			cmdutil.CheckErr(o.Validate())
+			cmdutil.CheckErr(o.Run(args))
 		},
 	}
 
@@ -191,15 +179,14 @@ func NewCmdFree(streams genericclioptions.IOStreams, version, commit, date strin
 	return cmd
 }
 
-// Prepare sets client
-func (o *FreeOptions) Prepare() error {
+// Complete prepares k8s clients
+func (o *FreeOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, args []string) error {
 
 	// get k8s client
-	restConfig, err := o.configFlags.ToRESTConfig()
+	client, err := f.KubernetesClientSet()
 	if err != nil {
 		return err
 	}
-	client := kubernetes.NewForConfigOrDie(restConfig)
 
 	// node client
 	o.nodeClient = client.CoreV1().Nodes()

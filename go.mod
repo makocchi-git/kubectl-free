@@ -5,6 +5,8 @@ go 1.12
 require (
 	github.com/MakeNowJust/heredoc v0.0.0-20171113091838-e9091a26100e // indirect
 	github.com/docker/docker v0.0.0-00010101000000-000000000000 // indirect
+	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
+	github.com/fatih/camelcase v1.0.0 // indirect
 	github.com/golangci/golangci-lint v1.17.1 // indirect
 	github.com/gookit/color v1.1.7
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
