@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/makocchi-git/kubectl-free/pkg/table"
 	"github.com/makocchi-git/kubectl-free/pkg/util"
@@ -13,14 +11,11 @@ import (
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	clientv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/util/templates"
-	metricsapiv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	metrics "k8s.io/metrics/pkg/client/clientset/versioned"
 	metricsv1beta1 "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 
@@ -261,7 +256,7 @@ func (o *FreeOptions) Run(args []string) error {
 
 	// list pods and return
 	if o.list {
-		if err := o.listPodsOnNode(nodes); err != nil {
+		if err := o.showPodsOnNode(nodes); err != nil {
 			return err
 		}
 		return nil
@@ -453,245 +448,245 @@ func (o *FreeOptions) setMetricsClient(config *rest.Config) (*metrics.Clientset,
 }
 
 // showFree prints requested and allocatable resources
-func (o *FreeOptions) showFree(nodes []v1.Node) error {
+// func (o *FreeOptions) showFree(nodes []v1.Node) error {
 
-	// set table header
-	if !o.noHeaders {
-		o.table.Header = o.freeTableHeaders
-	}
+// 	// set table header
+// 	if !o.noHeaders {
+// 		o.table.Header = o.freeTableHeaders
+// 	}
 
-	// node loop
-	for _, node := range nodes {
+// 	// node loop
+// 	for _, node := range nodes {
 
-		var (
-			cpuMetricsUsed  int64
-			memMetricsUsed  int64
-			cpuMetricsUsedP int64
-			memMetricsUsedP int64
-		)
+// 		var (
+// 			cpuMetricsUsed  int64
+// 			memMetricsUsed  int64
+// 			cpuMetricsUsedP int64
+// 			memMetricsUsedP int64
+// 		)
 
-		// node name
-		nodeName := node.ObjectMeta.Name
+// 		// node name
+// 		nodeName := node.ObjectMeta.Name
 
-		// node status
-		nodeStatus, err := util.GetNodeStatus(node, o.emojiStatus)
-		if err != nil {
-			return err
-		}
+// 		// node status
+// 		nodeStatus, err := util.GetNodeStatus(node, o.emojiStatus)
+// 		if err != nil {
+// 			return err
+// 		}
 
-		util.SetNodeStatusColor(&nodeStatus, o.nocolor)
+// 		util.SetNodeStatusColor(&nodeStatus, o.nocolor)
 
-		// get pods on node
-		pods, perr := util.GetPods(o.podClient, nodeName)
-		if perr != nil {
-			return perr
-		}
+// 		// get pods on node
+// 		pods, perr := util.GetPods(o.podClient, nodeName)
+// 		if perr != nil {
+// 			return perr
+// 		}
 
-		// calculate requested resources by pods
-		cpuRequested, memRequested, cpuLimited, memLimited := util.GetPodResources(*pods)
+// 		// calculate requested resources by pods
+// 		cpuRequested, memRequested, cpuLimited, memLimited := util.GetPodResources(*pods)
 
-		// get cpu allocatable
-		cpuAllocatable := node.Status.Allocatable.Cpu().MilliValue()
+// 		// get cpu allocatable
+// 		cpuAllocatable := node.Status.Allocatable.Cpu().MilliValue()
 
-		// get memoly allocatable
-		memAllocatable := node.Status.Allocatable.Memory().Value()
+// 		// get memoly allocatable
+// 		memAllocatable := node.Status.Allocatable.Memory().Value()
 
-		// get usage
-		cpuRequestedP := util.GetPercentage(cpuRequested, cpuAllocatable)
-		cpuLimitedP := util.GetPercentage(cpuLimited, cpuAllocatable)
-		memRequestedP := util.GetPercentage(memRequested, memAllocatable)
-		memLimitedP := util.GetPercentage(memLimited, memAllocatable)
+// 		// get usage
+// 		cpuRequestedP := util.GetPercentage(cpuRequested, cpuAllocatable)
+// 		cpuLimitedP := util.GetPercentage(cpuLimited, cpuAllocatable)
+// 		memRequestedP := util.GetPercentage(memRequested, memAllocatable)
+// 		memLimitedP := util.GetPercentage(memLimited, memAllocatable)
 
-		// get metrics
-		if !o.noMetrics && o.metricsNodeClient != nil {
-			nodeMetrics, err := o.metricsNodeClient.Get(nodeName, metav1.GetOptions{})
-			if err == nil {
-				cpuMetricsUsed = nodeMetrics.Usage.Cpu().MilliValue()
-				memMetricsUsed = nodeMetrics.Usage.Memory().Value()
-				cpuMetricsUsedP = util.GetPercentage(cpuMetricsUsed, cpuAllocatable)
-				memMetricsUsedP = util.GetPercentage(memMetricsUsed, memAllocatable)
-			}
-			// ignore fetching metrics error
-		}
+// 		// get metrics
+// 		if !o.noMetrics && o.metricsNodeClient != nil {
+// 			nodeMetrics, err := o.metricsNodeClient.Get(nodeName, metav1.GetOptions{})
+// 			if err == nil {
+// 				cpuMetricsUsed = nodeMetrics.Usage.Cpu().MilliValue()
+// 				memMetricsUsed = nodeMetrics.Usage.Memory().Value()
+// 				cpuMetricsUsedP = util.GetPercentage(cpuMetricsUsed, cpuAllocatable)
+// 				memMetricsUsedP = util.GetPercentage(memMetricsUsed, memAllocatable)
+// 			}
+// 			// ignore fetching metrics error
+// 		}
 
-		// create table row
-		// basic row
-		row := []string{
-			nodeName,   // node name
-			nodeStatus, // node status
-		}
+// 		// create table row
+// 		// basic row
+// 		row := []string{
+// 			nodeName,   // node name
+// 			nodeStatus, // node status
+// 		}
 
-		// cpu
-		if !o.noMetrics {
-			row = append(row, o.toMilliUnitOrDash(cpuMetricsUsed)) // cpu used (from metrics)
-		}
-		row = append(
-			row,
-			o.toMilliUnitOrDash(cpuRequested),   // cpu requested
-			o.toMilliUnitOrDash(cpuLimited),     // cpu limited
-			o.toMilliUnitOrDash(cpuAllocatable), // cpu allocatable
-		)
-		if !o.noMetrics {
-			row = append(row, o.toColorPercent(cpuMetricsUsedP)) // cpu used %
-		}
-		row = append(
-			row,
-			o.toColorPercent(cpuRequestedP), // cpu requested %
-			o.toColorPercent(cpuLimitedP),   // cpu limited %
-		)
+// 		// cpu
+// 		if !o.noMetrics {
+// 			row = append(row, o.toMilliUnitOrDash(cpuMetricsUsed)) // cpu used (from metrics)
+// 		}
+// 		row = append(
+// 			row,
+// 			o.toMilliUnitOrDash(cpuRequested),   // cpu requested
+// 			o.toMilliUnitOrDash(cpuLimited),     // cpu limited
+// 			o.toMilliUnitOrDash(cpuAllocatable), // cpu allocatable
+// 		)
+// 		if !o.noMetrics {
+// 			row = append(row, o.toColorPercent(cpuMetricsUsedP)) // cpu used %
+// 		}
+// 		row = append(
+// 			row,
+// 			o.toColorPercent(cpuRequestedP), // cpu requested %
+// 			o.toColorPercent(cpuLimitedP),   // cpu limited %
+// 		)
 
-		// mem
-		if !o.noMetrics {
-			row = append(row, o.toUnitOrDash(memMetricsUsed)) // mem used (from metrics)
-		}
-		row = append(
-			row,
-			o.toUnitOrDash(memRequested),   // mem requested
-			o.toUnitOrDash(memLimited),     // mem limited
-			o.toUnitOrDash(memAllocatable), // mem allocatable
-		)
-		if !o.noMetrics {
-			row = append(row, o.toColorPercent(memMetricsUsedP)) // mem used %
-		}
-		row = append(
-			row,
-			o.toColorPercent(memRequestedP), // mem requested %
-			o.toColorPercent(memLimitedP),   // mem limited %
-		)
+// 		// mem
+// 		if !o.noMetrics {
+// 			row = append(row, o.toUnitOrDash(memMetricsUsed)) // mem used (from metrics)
+// 		}
+// 		row = append(
+// 			row,
+// 			o.toUnitOrDash(memRequested),   // mem requested
+// 			o.toUnitOrDash(memLimited),     // mem limited
+// 			o.toUnitOrDash(memAllocatable), // mem allocatable
+// 		)
+// 		if !o.noMetrics {
+// 			row = append(row, o.toColorPercent(memMetricsUsedP)) // mem used %
+// 		}
+// 		row = append(
+// 			row,
+// 			o.toColorPercent(memRequestedP), // mem requested %
+// 			o.toColorPercent(memLimitedP),   // mem limited %
+// 		)
 
-		// show pod and container (--pod option)
-		if o.pod {
+// 		// show pod and container (--pod option)
+// 		if o.pod {
 
-			// pod count
-			podCount := util.GetPodCount(*pods)
+// 			// pod count
+// 			podCount := util.GetPodCount(*pods)
 
-			// container count
-			containerCount := util.GetContainerCount(*pods)
+// 			// container count
+// 			containerCount := util.GetContainerCount(*pods)
 
-			// get pod allocatable
-			podAllocatable := node.Status.Allocatable.Pods().Value()
+// 			// get pod allocatable
+// 			podAllocatable := node.Status.Allocatable.Pods().Value()
 
-			row = append(
-				row,
-				fmt.Sprintf("%d", podCount),           // pod used
-				strconv.FormatInt(podAllocatable, 10), // pod allocatable
-				fmt.Sprintf("%d", containerCount),     // containers
-			)
-		}
+// 			row = append(
+// 				row,
+// 				fmt.Sprintf("%d", podCount),           // pod used
+// 				strconv.FormatInt(podAllocatable, 10), // pod allocatable
+// 				fmt.Sprintf("%d", containerCount),     // containers
+// 			)
+// 		}
 
-		o.table.AddRow(row)
-	}
+// 		o.table.AddRow(row)
+// 	}
 
-	o.table.Print()
+// 	o.table.Print()
 
-	return nil
-}
+// 	return nil
+// }
 
-func (o *FreeOptions) listPodsOnNode(nodes []v1.Node) error {
+// func (o *FreeOptions) showPodsOnNode(nodes []v1.Node) error {
 
-	// set table header
-	if !o.noHeaders {
-		o.table.Header = o.listTableHeaders
-	}
+// 	// set table header
+// 	if !o.noHeaders {
+// 		o.table.Header = o.listTableHeaders
+// 	}
 
-	// get pod metrics
-	var podMetrics *metricsapiv1beta1.PodMetricsList
-	if !o.noMetrics && o.metricsPodClient != nil {
-		podMetrics, _ = o.metricsPodClient.List(metav1.ListOptions{})
-	}
+// 	// get pod metrics
+// 	var podMetrics *metricsapiv1beta1.PodMetricsList
+// 	if !o.noMetrics && o.metricsPodClient != nil {
+// 		podMetrics, _ = o.metricsPodClient.List(metav1.ListOptions{})
+// 	}
 
-	// node loop
-	for _, node := range nodes {
+// 	// node loop
+// 	for _, node := range nodes {
 
-		// node name
-		nodeName := node.ObjectMeta.Name
+// 		// node name
+// 		nodeName := node.ObjectMeta.Name
 
-		// get pods on node
-		pods, perr := util.GetPods(o.podClient, nodeName)
-		if perr != nil {
-			return perr
-		}
+// 		// get pods on node
+// 		pods, perr := util.GetPods(o.podClient, nodeName)
+// 		if perr != nil {
+// 			return perr
+// 		}
 
-		// node loop
-		for _, pod := range pods.Items {
+// 		// node loop
+// 		for _, pod := range pods.Items {
 
-			var containerCPUUsed int64
-			var containerMEMUsed int64
+// 			var containerCPUUsed int64
+// 			var containerMEMUsed int64
 
-			// pod name
-			podName := pod.ObjectMeta.Name
-			podNamespace := pod.ObjectMeta.Namespace
-			podIP := pod.Status.PodIP
-			podStatus := util.GetPodStatus(string(pod.Status.Phase), o.nocolor, o.emojiStatus)
-			podCreationTime := pod.ObjectMeta.CreationTimestamp.UTC()
-			podCreationTimeDiff := time.Since(podCreationTime)
-			podAge := "<unknown>"
-			if !podCreationTime.IsZero() {
-				podAge = duration.HumanDuration(podCreationTimeDiff)
-			}
+// 			// pod name
+// 			podName := pod.ObjectMeta.Name
+// 			podNamespace := pod.ObjectMeta.Namespace
+// 			podIP := pod.Status.PodIP
+// 			podStatus := util.GetPodStatus(string(pod.Status.Phase), o.nocolor, o.emojiStatus)
+// 			podCreationTime := pod.ObjectMeta.CreationTimestamp.UTC()
+// 			podCreationTimeDiff := time.Since(podCreationTime)
+// 			podAge := "<unknown>"
+// 			if !podCreationTime.IsZero() {
+// 				podAge = duration.HumanDuration(podCreationTimeDiff)
+// 			}
 
-			// container loop
-			for _, container := range pod.Spec.Containers {
-				containerName := container.Name
-				containerImage := container.Image
-				cCpuRequested := container.Resources.Requests.Cpu().MilliValue()
-				cCpuLimit := container.Resources.Limits.Cpu().MilliValue()
-				cMemRequested := container.Resources.Requests.Memory().Value()
-				cMemLimit := container.Resources.Limits.Memory().Value()
+// 			// container loop
+// 			for _, container := range pod.Spec.Containers {
+// 				containerName := container.Name
+// 				containerImage := container.Image
+// 				cCpuRequested := container.Resources.Requests.Cpu().MilliValue()
+// 				cCpuLimit := container.Resources.Limits.Cpu().MilliValue()
+// 				cMemRequested := container.Resources.Requests.Memory().Value()
+// 				cMemLimit := container.Resources.Limits.Memory().Value()
 
-				if !o.noMetrics && podMetrics != nil {
-					containerCPUUsed, containerMEMUsed = util.GetContainerMetrics(podMetrics, podName, containerName)
-				}
+// 				if !o.noMetrics && podMetrics != nil {
+// 					containerCPUUsed, containerMEMUsed = util.GetContainerMetrics(podMetrics, podName, containerName)
+// 				}
 
-				// skip if the requested/limit resources are not set
-				if !o.listAll {
-					if cCpuRequested == 0 && cCpuLimit == 0 && cMemRequested == 0 && cMemLimit == 0 {
-						continue
-					}
-				}
+// 				// skip if the requested/limit resources are not set
+// 				if !o.listAll {
+// 					if cCpuRequested == 0 && cCpuLimit == 0 && cMemRequested == 0 && cMemLimit == 0 {
+// 						continue
+// 					}
+// 				}
 
-				row := []string{
-					nodeName,      // node name
-					podNamespace,  // namespace
-					podName,       // pod name
-					podAge,        // pod age
-					podIP,         // pod ip
-					podStatus,     // pod status
-					containerName, // container name
-				}
+// 				row := []string{
+// 					nodeName,      // node name
+// 					podNamespace,  // namespace
+// 					podName,       // pod name
+// 					podAge,        // pod age
+// 					podIP,         // pod ip
+// 					podStatus,     // pod status
+// 					containerName, // container name
+// 				}
 
-				if !o.noMetrics {
-					row = append(row, o.toMilliUnitOrDash(containerCPUUsed))
-				}
+// 				if !o.noMetrics {
+// 					row = append(row, o.toMilliUnitOrDash(containerCPUUsed))
+// 				}
 
-				row = append(
-					row,
-					o.toMilliUnitOrDash(cCpuRequested), // container CPU requested
-					o.toMilliUnitOrDash(cCpuLimit),     // container CPU limit
-				)
+// 				row = append(
+// 					row,
+// 					o.toMilliUnitOrDash(cCpuRequested), // container CPU requested
+// 					o.toMilliUnitOrDash(cCpuLimit),     // container CPU limit
+// 				)
 
-				if !o.noMetrics {
-					row = append(row, o.toUnitOrDash(containerMEMUsed))
-				}
+// 				if !o.noMetrics {
+// 					row = append(row, o.toUnitOrDash(containerMEMUsed))
+// 				}
 
-				row = append(
-					row,
-					o.toUnitOrDash(cMemRequested), // Memory requested
-					o.toUnitOrDash(cMemLimit),     // Memory limit
-				)
+// 				row = append(
+// 					row,
+// 					o.toUnitOrDash(cMemRequested), // Memory requested
+// 					o.toUnitOrDash(cMemLimit),     // Memory limit
+// 				)
 
-				if o.listContainerImage {
-					row = append(row, containerImage)
-				}
+// 				if o.listContainerImage {
+// 					row = append(row, containerImage)
+// 				}
 
-				o.table.AddRow(row)
-			}
-		}
-	}
-	o.table.Print()
+// 				o.table.AddRow(row)
+// 			}
+// 		}
+// 	}
+// 	o.table.Print()
 
-	return nil
-}
+// 	return nil
+// }
 
 // toUnit calculate and add unit for int64
 func (o *FreeOptions) toUnit(i int64) string {
