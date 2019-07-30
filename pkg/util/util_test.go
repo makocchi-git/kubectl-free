@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"strconv"
 	"testing"
-	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -166,9 +165,7 @@ var testMetrics = &metricsapiv1beta1.PodMetricsList{
 					"key": "value",
 				},
 			},
-			Timestamp: metav1.Time{
-				time.Now(),
-			},
+			Timestamp: metav1.Now(),
 			Containers: []metricsapiv1beta1.ContainerMetrics{
 				{
 					Name: "container1",
