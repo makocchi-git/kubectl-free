@@ -11,7 +11,7 @@ import (
 
 // OutputTable is struct of tables for outputs
 type OutputTable struct {
-	Header string
+	Header []string
 	Rows   []string
 	Output io.Writer
 }
@@ -31,7 +31,7 @@ func (t *OutputTable) Print() {
 
 	// write header
 	if len(t.Header) > 0 {
-		fmt.Fprintln(printer, t.Header)
+		fmt.Fprintln(printer, util.JoinTab(t.Header))
 	}
 
 	// write rows
@@ -43,17 +43,7 @@ func (t *OutputTable) Print() {
 	printer.Flush()
 }
 
-// AddHeader adds row to table
-func (t *OutputTable) AddHeader(s []string) {
-	t.Header = util.JoinTab(s)
-}
-
 // AddRow adds row to table
 func (t *OutputTable) AddRow(s []string) {
 	t.Rows = append(t.Rows, util.JoinTab(s))
 }
-
-// // GetHeader returns header string
-// func (t *OutputTable) GetHeader() []byte {
-// 	return []byte(t.Header)
-// }

@@ -78,18 +78,3 @@ const (
 	// EmojiPodUnknown is unknown emoji for pod status
 	EmojiPodUnknown = "❓"
 )
-
-// array definitions
-
-var (
-
-	// ValidheaderOptions defines valid header options
-	ValidheaderOptions = []string{
-		"verbose",
-		"v",
-		"default",
-		"d",
-		"none",
-		"n",
-	}
-)

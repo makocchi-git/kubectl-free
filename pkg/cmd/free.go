@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/makocchi-git/kubectl-free/pkg/table"
 	"github.com/makocchi-git/kubectl-free/pkg/util"
@@ -12,10 +13,16 @@ import (
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	clientv1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/rest"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	metricsapiv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
+	metrics "k8s.io/metrics/pkg/client/clientset/versioned"
+	metricsv1beta1 "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 
 	// Initialize all known client auth plugins.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -70,10 +77,11 @@ type FreeOptions struct {
 	// general options
 	labelSelector string
 	table         *table.OutputTable
-	header        string
 	pod           bool
 	emojiStatus   bool
 	allNamespaces bool
+	noHeaders     bool
+	noMetrics     bool
 
 	// unit options
 	bytes       bool
@@ -94,8 +102,10 @@ type FreeOptions struct {
 	listAll            bool
 
 	// k8s clients
-	nodeClient clientv1.NodeInterface
-	podClient  clientv1.PodInterface
+	nodeClient        clientv1.NodeInterface
+	podClient         clientv1.PodInterface
+	metricsPodClient  metricsv1beta1.PodMetricsInterface
+	metricsNodeClient metricsv1beta1.NodeMetricsInterface
 
 	// table headers
 	freeTableHeaders []string
@@ -123,8 +133,9 @@ func NewFreeOptions(streams genericclioptions.IOStreams) *FreeOptions {
 		pod:                false,
 		emojiStatus:        false,
 		table:              table.NewOutputTable(os.Stdout),
-		header:             "default",
 		allNamespaces:      false,
+		noHeaders:          false,
+		noMetrics:          false,
 	}
 }
 
@@ -159,6 +170,8 @@ func NewCmdFree(f cmdutil.Factory, streams genericclioptions.IOStreams, version,
 	cmd.Flags().BoolVarP(&o.listAll, "list-all", "", o.listAll, `Show pods even if they have no requests/limit`)
 	cmd.Flags().BoolVarP(&o.emojiStatus, "emoji", "", o.emojiStatus, `Let's smile!! 😃 😭`)
 	cmd.Flags().BoolVarP(&o.allNamespaces, "all-namespaces", "", o.allNamespaces, `If present, list pod resources(limits) across all namespaces. Namespace in current context is ignored even if specified with --namespace.`)
+	cmd.Flags().BoolVarP(&o.noHeaders, "no-headers", "", o.noHeaders, `Do not print table headers.`)
+	cmd.Flags().BoolVarP(&o.noMetrics, "no-metrics", "", o.noMetrics, `Do not print node/pods/containers usage from metrics-server.`)
 
 	// int64 options
 	cmd.Flags().Int64VarP(&o.warnThreshold, "warn-threshold", "", o.warnThreshold, `Threshold of warn(yellow) color for USED column.`)
@@ -166,7 +179,6 @@ func NewCmdFree(f cmdutil.Factory, streams genericclioptions.IOStreams, version,
 
 	// string option
 	cmd.Flags().StringVarP(&o.labelSelector, "selector", "l", o.labelSelector, `Selector (label query) to filter on.`)
-	cmd.Flags().StringVarP(&o.header, "header", "", o.header, `header style. ["default", "verbose", "none"] are allowed.`)
 
 	o.configFlags.AddFlags(cmd.Flags())
 
@@ -191,19 +203,34 @@ func (o *FreeOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, args []str
 	// node client
 	o.nodeClient = client.CoreV1().Nodes()
 
-	// pod client
+	// metric client
+	config, err := f.ToRESTConfig()
+	if err != nil {
+		return err
+	}
+
+	mclient, err := o.setMetricsClient(config)
+	if err != nil {
+		return err
+	}
+
+	// pod and metrics client
 	if o.allNamespaces {
 		// --all-namespace flag
 		o.podClient = client.CoreV1().Pods(v1.NamespaceAll)
+		o.metricsPodClient = mclient.MetricsV1beta1().PodMetricses(v1.NamespaceAll)
 	} else {
 		if *o.configFlags.Namespace == "" {
 			// default namespace is "default"
 			o.podClient = client.CoreV1().Pods(v1.NamespaceDefault)
+			o.metricsPodClient = mclient.MetricsV1beta1().PodMetricses(v1.NamespaceDefault)
 		} else {
 			// targeted namespace (--namespace flag)
 			o.podClient = client.CoreV1().Pods(*o.configFlags.Namespace)
+			o.metricsPodClient = mclient.MetricsV1beta1().PodMetricses(*o.configFlags.Namespace)
 		}
 	}
+	o.metricsNodeClient = mclient.MetricsV1beta1().NodeMetricses()
 
 	// prepare table header
 	o.prepareFreeTableHeader()
@@ -217,11 +244,6 @@ func (o *FreeOptions) Validate() error {
 
 	// validate threshold
 	if err := util.ValidateThreshold(o.warnThreshold, o.critThreshold); err != nil {
-		return err
-	}
-
-	// validate header option
-	if err := util.ValidateHeaderOpt(o.header); err != nil {
 		return err
 	}
 
@@ -256,48 +278,89 @@ func (o *FreeOptions) Run(args []string) error {
 // prepareFreeTableHeader defines table headers for free usage
 func (o *FreeOptions) prepareFreeTableHeader() {
 
-	fth := []string{}
+	hName := "NAME"
+	hStatus := "STATUS"
+	hCPUUse := "CPU/use"
+	hCPUReq := "CPU/req"
+	hCPULim := "CPU/lim"
+	hCPUAlloc := "CPU/alloc"
+	hCPUUseP := "CPU/use%"
+	hCPUReqP := "CPU/req%"
+	hCPULimP := "CPU/lim%"
+	hMEMUse := "MEM/use"
+	hMEMReq := "MEM/req"
+	hMEMLim := "MEM/lim"
+	hMEMAlloc := "MEM/alloc"
+	hMEMUseP := "MEM/use%"
+	hMEMReqP := "MEM/req%"
+	hMEMLimP := "MEM/lim%"
+	hPods := "PODS"
+	hPodsAlloc := "PODS/alloc"
+	hContainers := "CONTAINERS"
 
-	switch o.header {
-	case "default", "d":
-		fth = []string{
-			"NAME",
-			"STATUS",
-			"CPU/req",
-			"CPU/alloc",
-			"CPU/%",
-			"MEM/req",
-			"MEM/alloc",
-			"MEM/%",
-		}
-
-		if o.pod {
-			fth = append(fth, "PODS", "PODS/alloc", "CONTAINERS")
-		}
-
-	case "verbose", "v":
-		fth = []string{
-			"NAME",
-			"STATUS",
-			"CPU requested",
-			"CPU allocatable",
-			"CPU %USED",
-			"Memory requested",
-			"Memory allocatable",
-			"Memory %USED",
-		}
-
-		if o.pod {
-			fth = append(fth, "PODS", "PODS allocation", "CONTAINERS")
-		}
-
+	if !o.nocolor {
+		// hack: avoid breaking column by escape char
+		util.DefaultColor(&hStatus)  // STATUS
+		util.DefaultColor(&hCPUUseP) // CPU/use%
+		util.DefaultColor(&hCPUReqP) // CPU/req%
+		util.DefaultColor(&hCPULimP) // CPU/lim%
+		util.DefaultColor(&hMEMUseP) // MEM/use%
+		util.DefaultColor(&hMEMReqP) // MEM/req%
+		util.DefaultColor(&hMEMLimP) // MEM/lim%
 	}
 
-	if !o.nocolor && len(fth) > 0 {
-		// hack: avoid breaking column by escape char
-		util.DefaultColor(&fth[1]) // STATUS
-		util.DefaultColor(&fth[4]) // CPU/%
-		util.DefaultColor(&fth[7]) // MEM/%
+	baseHeader := []string{
+		hName,
+		hStatus,
+	}
+
+	cpuHeader := []string{
+		hCPUReq,
+		hCPULim,
+		hCPUAlloc,
+	}
+
+	cpuPHeader := []string{
+		hCPUReqP,
+		hCPULimP,
+	}
+
+	memHeader := []string{
+		hMEMReq,
+		hMEMLim,
+		hMEMAlloc,
+	}
+
+	memPHeader := []string{
+		hMEMReqP,
+		hMEMLimP,
+	}
+
+	podHeader := []string{
+		hPods,
+		hPodsAlloc,
+		hContainers,
+	}
+
+	if !o.noMetrics {
+		// insert metrics columns
+		cpuHeader = append([]string{hCPUUse}, cpuHeader...)
+		cpuPHeader = append([]string{hCPUUseP}, cpuPHeader...)
+		memHeader = append([]string{hMEMUse}, memHeader...)
+		memPHeader = append([]string{hMEMUseP}, memPHeader...)
+	}
+
+	// finally, join all columns
+	fth := []string{}
+
+	fth = append(fth, baseHeader...)
+	fth = append(fth, cpuHeader...)
+	fth = append(fth, cpuPHeader...)
+	fth = append(fth, memHeader...)
+	fth = append(fth, memPHeader...)
+
+	if o.pod {
+		fth = append(fth, podHeader...)
 	}
 
 	o.freeTableHeaders = fth
@@ -306,62 +369,106 @@ func (o *FreeOptions) prepareFreeTableHeader() {
 // prepareListTableHeader defines table headers for --list
 func (o *FreeOptions) prepareListTableHeader() {
 
-	lth := []string{}
+	hNode := "NODE NAME"
+	hNameSpace := "NAMESPACE"
+	hPod := "POD NAME"
+	hPodIP := "POD IP"
+	hPodStatus := "POD STATUS"
+	hPodAge := "POD AGE"
+	hContainer := "CONTAINER"
+	hCPUUse := "CPU/use"
+	hCPUReq := "CPU/req"
+	hCPULim := "CPU/lim"
+	hMEMUse := "MEM/use"
+	hMEMReq := "MEM/req"
+	hMEMLim := "MEM/lim"
+	hImage := "IMAGE"
 
-	switch o.header {
-	case "default", "d":
-		lth = []string{
-			"NODE NAME",
-			"POD",
-			"POD IP",
-			"POD STATUS",
-			"NAMESPACE",
-			"CONTAINER",
-			"CPU/req",
-			"CPU/lim",
-			"MEM/req",
-			"MEM/lim",
-		}
-
-		if o.listContainerImage {
-			lth = append(lth, "IMAGE")
-		}
-
-	case "verbose", "v":
-		lth = []string{
-			"NODE NAME",
-			"POD",
-			"POD IP",
-			"POD STATUS",
-			"NAMESPACE",
-			"CONTAINER",
-			"CPU requested",
-			"CPU limit",
-			"MEM requested",
-			"MEM limit",
-		}
-
-		if o.listContainerImage {
-			lth = append(lth, "IMAGE")
-		}
+	if !o.nocolor {
+		// hack: avoid breaking column by escape char
+		util.DefaultColor(&hPodStatus) // POD STATUS
 	}
 
-	if !o.nocolor && len(lth) > 0 {
-		// hack: avoid breaking column by escape char
-		util.DefaultColor(&lth[3]) // POD STATUS
+	baseHeader := []string{
+		hNode,
+		hNameSpace,
+	}
+
+	podHeader := []string{
+		hPod,
+		hPodAge,
+		hPodIP,
+		hPodStatus,
+	}
+
+	containerHeader := []string{
+		hContainer,
+	}
+
+	cpuHeader := []string{
+		hCPUReq,
+		hCPULim,
+	}
+
+	memHeader := []string{
+		hMEMReq,
+		hMEMLim,
+	}
+
+	imageHeader := []string{
+		hImage,
+	}
+
+	if !o.noMetrics {
+		// insert metrics columns
+		cpuHeader = append([]string{hCPUUse}, cpuHeader...)
+		memHeader = append([]string{hMEMUse}, memHeader...)
+	}
+
+	// finally, join all columns
+	lth := []string{}
+
+	lth = append(lth, baseHeader...)
+	lth = append(lth, podHeader...)
+	lth = append(lth, containerHeader...)
+	lth = append(lth, cpuHeader...)
+	lth = append(lth, memHeader...)
+
+	if o.listContainerImage {
+		lth = append(lth, imageHeader...)
 	}
 
 	o.listTableHeaders = lth
+}
+
+// setMetricsClient sets metrics client
+func (o *FreeOptions) setMetricsClient(config *rest.Config) (*metrics.Clientset, error) {
+
+	metricsClient, err := metrics.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return metricsClient, nil
 }
 
 // showFree prints requested and allocatable resources
 func (o *FreeOptions) showFree(nodes []v1.Node) error {
 
 	// set table header
-	o.table.AddHeader(o.freeTableHeaders)
+	if !o.noHeaders {
+		o.table.Header = o.freeTableHeaders
+	}
 
 	// node loop
 	for _, node := range nodes {
+
+		var (
+			cpuMetricsUsed  int64
+			memMetricsUsed  int64
+			cpuMetricsUsedP int64
+			memMetricsUsedP int64
+		)
 
 		// node name
 		nodeName := node.ObjectMeta.Name
@@ -381,7 +488,7 @@ func (o *FreeOptions) showFree(nodes []v1.Node) error {
 		}
 
 		// calculate requested resources by pods
-		cpuRequested, memRequested, _, _ := util.GetPodResources(*pods)
+		cpuRequested, memRequested, cpuLimited, memLimited := util.GetPodResources(*pods)
 
 		// get cpu allocatable
 		cpuAllocatable := node.Status.Allocatable.Cpu().MilliValue()
@@ -390,19 +497,67 @@ func (o *FreeOptions) showFree(nodes []v1.Node) error {
 		memAllocatable := node.Status.Allocatable.Memory().Value()
 
 		// get usage
-		cpuUsed := util.GetPercentage(cpuRequested, cpuAllocatable)
-		memUsed := util.GetPercentage(memRequested, memAllocatable)
+		cpuRequestedP := util.GetPercentage(cpuRequested, cpuAllocatable)
+		cpuLimitedP := util.GetPercentage(cpuLimited, cpuAllocatable)
+		memRequestedP := util.GetPercentage(memRequested, memAllocatable)
+		memLimitedP := util.GetPercentage(memLimited, memAllocatable)
 
-		row := []string{
-			nodeName,                            // node name
-			nodeStatus,                          // node status
-			o.toMilliUnitOrDash(cpuRequested),   // cpu requested
-			o.toMilliUnitOrDash(cpuAllocatable), // cpu allocatable
-			o.toColorPercent(cpuUsed),           // cpu used %
-			o.toUnitOrDash(memRequested),        // mem requested
-			o.toUnitOrDash(memAllocatable),      // mem allocatable
-			o.toColorPercent(memUsed),           // mem used %
+		// get metrics
+		if !o.noMetrics && o.metricsNodeClient != nil {
+			nodeMetrics, err := o.metricsNodeClient.Get(nodeName, metav1.GetOptions{})
+			if err == nil {
+				cpuMetricsUsed = nodeMetrics.Usage.Cpu().MilliValue()
+				memMetricsUsed = nodeMetrics.Usage.Memory().Value()
+				cpuMetricsUsedP = util.GetPercentage(cpuMetricsUsed, cpuAllocatable)
+				memMetricsUsedP = util.GetPercentage(memMetricsUsed, memAllocatable)
+			}
+			// ignore fetching metrics error
 		}
+
+		// create table row
+		// basic row
+		row := []string{
+			nodeName,   // node name
+			nodeStatus, // node status
+		}
+
+		// cpu
+		if !o.noMetrics {
+			row = append(row, o.toMilliUnitOrDash(cpuMetricsUsed)) // cpu used (from metrics)
+		}
+		row = append(
+			row,
+			o.toMilliUnitOrDash(cpuRequested),   // cpu requested
+			o.toMilliUnitOrDash(cpuLimited),     // cpu limited
+			o.toMilliUnitOrDash(cpuAllocatable), // cpu allocatable
+		)
+		if !o.noMetrics {
+			row = append(row, o.toColorPercent(cpuMetricsUsedP)) // cpu used %
+		}
+		row = append(
+			row,
+			o.toColorPercent(cpuRequestedP), // cpu requested %
+			o.toColorPercent(cpuLimitedP),   // cpu limited %
+		)
+
+		// mem
+		if !o.noMetrics {
+			row = append(row, o.toUnitOrDash(memMetricsUsed)) // mem used (from metrics)
+		}
+		row = append(
+			row,
+			o.toUnitOrDash(memRequested),   // mem requested
+			o.toUnitOrDash(memLimited),     // mem limited
+			o.toUnitOrDash(memAllocatable), // mem allocatable
+		)
+		if !o.noMetrics {
+			row = append(row, o.toColorPercent(memMetricsUsedP)) // mem used %
+		}
+		row = append(
+			row,
+			o.toColorPercent(memRequestedP), // mem requested %
+			o.toColorPercent(memLimitedP),   // mem limited %
+		)
 
 		// show pod and container (--pod option)
 		if o.pod {
@@ -435,7 +590,15 @@ func (o *FreeOptions) showFree(nodes []v1.Node) error {
 func (o *FreeOptions) listPodsOnNode(nodes []v1.Node) error {
 
 	// set table header
-	o.table.AddHeader(o.listTableHeaders)
+	if !o.noHeaders {
+		o.table.Header = o.listTableHeaders
+	}
+
+	// get pod metrics
+	var podMetrics *metricsapiv1beta1.PodMetricsList
+	if !o.noMetrics && o.metricsPodClient != nil {
+		podMetrics, _ = o.metricsPodClient.List(metav1.ListOptions{})
+	}
 
 	// node loop
 	for _, node := range nodes {
@@ -452,11 +615,20 @@ func (o *FreeOptions) listPodsOnNode(nodes []v1.Node) error {
 		// node loop
 		for _, pod := range pods.Items {
 
+			var containerCPUUsed int64
+			var containerMEMUsed int64
+
 			// pod name
 			podName := pod.ObjectMeta.Name
 			podNamespace := pod.ObjectMeta.Namespace
 			podIP := pod.Status.PodIP
 			podStatus := util.GetPodStatus(string(pod.Status.Phase), o.nocolor, o.emojiStatus)
+			podCreationTime := pod.ObjectMeta.CreationTimestamp.UTC()
+			podCreationTimeDiff := time.Since(podCreationTime)
+			podAge := "<unknown>"
+			if !podCreationTime.IsZero() {
+				podAge = duration.HumanDuration(podCreationTimeDiff)
+			}
 
 			// container loop
 			for _, container := range pod.Spec.Containers {
@@ -467,6 +639,10 @@ func (o *FreeOptions) listPodsOnNode(nodes []v1.Node) error {
 				cMemRequested := container.Resources.Requests.Memory().Value()
 				cMemLimit := container.Resources.Limits.Memory().Value()
 
+				if !o.noMetrics && podMetrics != nil {
+					containerCPUUsed, containerMEMUsed = util.GetContainerMetrics(podMetrics, podName, containerName)
+				}
+
 				// skip if the requested/limit resources are not set
 				if !o.listAll {
 					if cCpuRequested == 0 && cCpuLimit == 0 && cMemRequested == 0 && cMemLimit == 0 {
@@ -475,17 +651,34 @@ func (o *FreeOptions) listPodsOnNode(nodes []v1.Node) error {
 				}
 
 				row := []string{
-					nodeName,                           // node name
-					podName,                            // pod name
-					podIP,                              // pod ip
-					podStatus,                          // pod status
-					podNamespace,                       // namespace
-					containerName,                      // container name
+					nodeName,      // node name
+					podNamespace,  // namespace
+					podName,       // pod name
+					podAge,        // pod age
+					podIP,         // pod ip
+					podStatus,     // pod status
+					containerName, // container name
+				}
+
+				if !o.noMetrics {
+					row = append(row, o.toMilliUnitOrDash(containerCPUUsed))
+				}
+
+				row = append(
+					row,
 					o.toMilliUnitOrDash(cCpuRequested), // container CPU requested
 					o.toMilliUnitOrDash(cCpuLimit),     // container CPU limit
-					o.toUnitOrDash(cMemRequested),      // Memory requested
-					o.toUnitOrDash(cMemLimit),          // Memory limit
+				)
+
+				if !o.noMetrics {
+					row = append(row, o.toUnitOrDash(containerMEMUsed))
 				}
+
+				row = append(
+					row,
+					o.toUnitOrDash(cMemRequested), // Memory requested
+					o.toUnitOrDash(cMemLimit),     // Memory limit
+				)
 
 				if o.listContainerImage {
 					row = append(row, containerImage)

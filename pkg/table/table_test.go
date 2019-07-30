@@ -40,7 +40,7 @@ func TestPrint(t *testing.T) {
 
 		t.Run(test.description, func(t *testing.T) {
 			table := &OutputTable{
-				Header: "a\tb",
+				Header: []string{"a", "b"},
 				Rows:   test.rows,
 				Output: buffer,
 			}
@@ -57,17 +57,6 @@ func TestPrint(t *testing.T) {
 				return
 			}
 		})
-	}
-}
-
-func TestAddHeader(t *testing.T) {
-	table := &OutputTable{}
-	table.AddHeader([]string{"a", "b", "c"})
-
-	expected := "a\tb\tc"
-	if table.Header != expected {
-		t.Errorf("expected(%s) differ (got: %s)", expected, table.Header)
-		return
 	}
 }
 
