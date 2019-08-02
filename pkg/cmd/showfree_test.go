@@ -9,7 +9,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	fake "k8s.io/client-go/kubernetes/fake"
-	fakemetrics "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 )
 
 func TestShowFree(t *testing.T) {
@@ -42,7 +41,7 @@ func TestShowFree(t *testing.T) {
 			true,
 			false,
 			[]string{
-				"node1   Ready   -     1     2     4     0%    25%   50%   -     1K    2K    4K    0%    25%   50%",
+				"node1   Ready   100m   1     2     4     2%    25%   50%   1K    1K    2K    4K    25%   25%   50%",
 				"",
 			},
 			nil,
@@ -78,8 +77,8 @@ func TestShowFree(t *testing.T) {
 
 			fakeNodeClient := fake.NewSimpleClientset(&testNodes[0])
 			fakePodClient := fake.NewSimpleClientset(&testPods[0], &testPods[2])
-			fakeMetricsNodeClient := fakemetrics.NewSimpleClientset(&testNodeMetrics.Items[0])
-			fakeMetricsPodClient := fakemetrics.NewSimpleClientset(testPodMetrics)
+			fakeMetricsPodClient := prepareTestPodMetricsClient()
+			fakeMetricsNodeClient := prepareTestNodeMetricsClient()
 
 			buffer := &bytes.Buffer{}
 			o := &FreeOptions{
@@ -113,8 +112,8 @@ func TestShowFree(t *testing.T) {
 
 		fakeNodeClient := fake.NewSimpleClientset(&testNodes[0])
 		fakePodClient := fake.NewSimpleClientset(&testPods[0], &testPods[1], &testPods[2])
-		fakeMetricsNodeClient := fakemetrics.NewSimpleClientset(&testNodeMetrics.Items[0])
-		fakeMetricsPodClient := fakemetrics.NewSimpleClientset(testPodMetrics)
+		fakeMetricsPodClient := prepareTestPodMetricsClient()
+		fakeMetricsNodeClient := prepareTestNodeMetricsClient()
 
 		buffer := &bytes.Buffer{}
 		o := &FreeOptions{

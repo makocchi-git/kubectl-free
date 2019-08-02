@@ -15,8 +15,10 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	fake "k8s.io/client-go/kubernetes/fake"
+	core "k8s.io/client-go/testing"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	metricsapiv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
@@ -428,8 +430,8 @@ func TestRun(t *testing.T) {
 
 			fakeNodeClient := fake.NewSimpleClientset(&testNodes[0])
 			fakePodClient := fake.NewSimpleClientset(&testPods[0])
-			fakeMetricsNodeClient := fakemetrics.NewSimpleClientset(&testNodeMetrics.Items[0])
-			fakeMetricsPodClient := fakemetrics.NewSimpleClientset(testPodMetrics)
+			fakeMetricsNodeClient := prepareTestNodeMetricsClient()
+			fakeMetricsPodClient := prepareTestPodMetricsClient()
 
 			buffer := &bytes.Buffer{}
 			o := &FreeOptions{
@@ -886,4 +888,20 @@ func executeCommandC(root *cobra.Command, args ...string) (c *cobra.Command, out
 	c, err = root.ExecuteC()
 
 	return c, buf.String(), err
+}
+
+func prepareTestNodeMetricsClient() *fakemetrics.Clientset {
+	fakeMetricsClient := &fakemetrics.Clientset{}
+	fakeMetricsClient.AddReactor("get", "nodes", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		return true, &testNodeMetrics.Items[0], nil
+	})
+	return fakeMetricsClient
+}
+
+func prepareTestPodMetricsClient() *fakemetrics.Clientset {
+	fakeMetricsClient := &fakemetrics.Clientset{}
+	fakeMetricsClient.AddReactor("list", "pods", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		return true, testPodMetrics, nil
+	})
+	return fakeMetricsClient
 }

@@ -42,7 +42,7 @@ func (o *FreeOptions) showPodsOnNode(nodes []v1.Node) error {
 			var containerCPUUsed int64
 			var containerMEMUsed int64
 
-			// pod name
+			// pod information
 			podName := pod.ObjectMeta.Name
 			podNamespace := pod.ObjectMeta.Namespace
 			podIP := pod.Status.PodIP
