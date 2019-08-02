@@ -409,7 +409,7 @@ func TestRun(t *testing.T) {
 			false,
 			[]string{
 				"NAME    STATUS   CPU/use   CPU/req   CPU/lim   CPU/alloc   CPU/use%   CPU/req%   CPU/lim%   MEM/use   MEM/req   MEM/lim   MEM/alloc   MEM/use%   MEM/req%   MEM/lim%",
-				"node1   Ready    -         1         2         4           0%         25%        50%        -         1K        2K        4K          0%         25%        50%",
+				"node1   Ready    100m      1         2         4           2%         25%        50%        1K        1K        2K        4K          25%        25%        50%",
 				"",
 			},
 		},
@@ -419,7 +419,7 @@ func TestRun(t *testing.T) {
 			true,
 			[]string{
 				"NODE NAME   NAMESPACE   POD NAME   POD AGE     POD IP    POD STATUS   CONTAINER    CPU/use   CPU/req   CPU/lim   MEM/use   MEM/req   MEM/lim",
-				"node1       default     pod1       <unknown>   1.2.3.4   Running      container1   -         1         2         -         1K        2K",
+				"node1       default     pod1       <unknown>   1.2.3.4   Running      container1   10m       1         2         0K        1K        2K",
 				"",
 			},
 		},
