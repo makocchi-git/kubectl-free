@@ -11,10 +11,10 @@ Print pod resources/limits usage on Kubernetes node(s) like a linux "free" comma
 
 ```shell
 $ kubectl free
-NAME    STATUS   CPU/req   CPU/lim   CPU/alloc   CPU/req%   CPU/lim%   MEM/req    MEM/lim    MEM/alloc   MEM/req%   MEM/lim%
-node1   Ready    704m      304m      3600m       19%        8%         807403K    375390K    5943857K    13%        6%
-node2   Ready    350m      2100m     3600m       9%         58%        260046K    1304428K   5943857K    4%         21%
-node3   Ready    2030m     12900m    3600m       56%        358%       3736783K   8347396K   5943865K    62%        140%
+NAME    STATUS   CPU/use   CPU/req   CPU/lim   CPU/alloc   CPU/use%   CPU/req%   CPU/lim%   MEM/use    MEM/req    MEM/lim    MEM/alloc   MEM/use%   MEM/req%   MEM/lim%
+node1   Ready    58m       704m      304m      3600m       1%         19%        8%         2144333K   807403K    375390K    5943857K    36%        13%        6%
+node2   Ready    235m      350m      2100m     3600m       6%         9%         58%        2061467K   260046K    1304428K   5943857K    34%        4%         21%
+node3   Ready    222m      2030m     12900m    3600m       6%         56%        358%       2935312K   3736783K   8347396K   5943865K    49%        62%        140%
 ```
 
 And list containers of pod on Kubernetes node(s).
@@ -80,7 +80,8 @@ kubectl free --list --emoji
 ~~This plugin shows just sum of requested(limited) resources, **not a real usage**.  
 I recommend to use `kubectl free` with `kubectl top`.~~
 
-kubectl free v0.2.0 supports printing real usages from metrics server in a target cluster.
+kubectl free v0.2.0 supports printing real usages from metrics server in a target cluster.  
+You can disable printing usage with `--no-metrics` option.
 
 ## License
 
