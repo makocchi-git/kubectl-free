@@ -29,27 +29,3 @@ func TestValidateThreshold(t *testing.T) {
 		})
 	}
 }
-
-func TestValidateHeaderOpt(t *testing.T) {
-
-	var tests = []struct {
-		description string
-		opt         string
-		expected    error
-	}{
-		{"correct opt1", "default", nil},
-		{"correct opt2", "d", nil},
-		{"correct opt3", "verbose", nil},
-		{"incorrect opt", "hogehoge", fmt.Errorf("invalid header option: hogehoge")},
-	}
-
-	for _, test := range tests {
-
-		t.Run(test.description, func(t *testing.T) {
-			actual := ValidateHeaderOpt(test.opt)
-			if !reflect.DeepEqual(actual, test.expected) {
-				t.Errorf("expected(%v) differ (got: %v)", test.expected, actual)
-			}
-		})
-	}
-}

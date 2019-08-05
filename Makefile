@@ -15,7 +15,7 @@ kubectl_free ?= _output/kubectl-free
 build: clean ${kubectl_free}
 
 ${kubectl_free}:
-	GO111MODULE=on CGO_ENABLED=0 $(GO) build ${LDFLAGS} -o $@ ./cmd/kubectl-free/root.go
+	GO111MODULE=on CGO_ENABLED=0 $(GO) build ${LDFLAGS} -o $@ ./cmd/kubectl-free/kubectl-free.go
 
 .PHONY: clean
 clean:

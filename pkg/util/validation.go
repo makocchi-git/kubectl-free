@@ -2,8 +2,6 @@ package util
 
 import (
 	"fmt"
-
-	"github.com/makocchi-git/kubectl-free/pkg/constants"
 )
 
 func ValidateThreshold(w, c int64) error {
@@ -14,14 +12,4 @@ func ValidateThreshold(w, c int64) error {
 	}
 
 	return nil
-}
-
-func ValidateHeaderOpt(opt string) error {
-	for _, v := range constants.ValidheaderOptions {
-		if v == opt {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("invalid header option: %s", opt)
 }

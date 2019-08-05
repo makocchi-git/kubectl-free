@@ -8,6 +8,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientv1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	metricsapiv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
 	"github.com/makocchi-git/kubectl-free/pkg/constants"
 )
@@ -221,6 +222,28 @@ func GetPods(c clientv1.PodInterface, nodeName string) (*v1.PodList, error) {
 	}
 
 	return pods, nil
+}
+
+// GetContainerMetrics returns container metrics usage
+func GetContainerMetrics(metrics *metricsapiv1beta1.PodMetricsList, podName, containerName string) (cpu, mem int64) {
+
+	var c int64
+	var m int64
+
+	for _, pod := range metrics.Items {
+		if pod.ObjectMeta.Name == podName {
+			for _, container := range pod.Containers {
+				if container.Name == containerName {
+					c = container.Usage.Cpu().MilliValue()
+					m = container.Usage.Memory().Value()
+					break
+				}
+			}
+		}
+	}
+
+	// if no metrics found, return 0 0
+	return c, m
 }
 
 // GetPodResources returns sum of requested/limit resources

@@ -2,9 +2,10 @@ package util
 
 import (
 	"bytes"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"strconv"
 	"testing"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/makocchi-git/kubectl-free/pkg/constants"
 
@@ -12,6 +13,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fake "k8s.io/client-go/kubernetes/fake"
+	metricsapiv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 )
 
 // test node object
@@ -149,6 +151,30 @@ var testPods = []v1.Pod{
 		},
 		Status: v1.PodStatus{
 			Phase: v1.PodFailed,
+		},
+	},
+}
+
+var testMetrics = &metricsapiv1beta1.PodMetricsList{
+	Items: []metricsapiv1beta1.PodMetrics{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pod1",
+				Namespace: "default",
+				Labels: map[string]string{
+					"key": "value",
+				},
+			},
+			Timestamp: metav1.Now(),
+			Containers: []metricsapiv1beta1.ContainerMetrics{
+				{
+					Name: "container1",
+					Usage: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(10, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(10, resource.DecimalSI),
+					},
+				},
+			},
 		},
 	},
 }
@@ -548,6 +574,34 @@ func TestGetPodResources(t *testing.T) {
 			return
 		}
 	})
+}
+
+func TestGetContainerMetrics(t *testing.T) {
+
+	var tests = []struct {
+		description   string
+		podName       string
+		containerName string
+		expectedCPU   int64
+		expectedMEM   int64
+	}{
+		{"10 and 10", "pod1", "container1", 10, 10},
+		{"0 and 0", "pod999", "container999", 0, 0},
+	}
+
+	for _, test := range tests {
+		t.Run("[GetContainerMetrics] cpu and mem", func(t *testing.T) {
+			actualCPU, actualMEM := GetContainerMetrics(testMetrics, test.podName, test.containerName)
+			if actualCPU != test.expectedCPU {
+				t.Errorf("[%s cpu] expected(%d) differ (got: %d)", test.description, test.expectedCPU, actualCPU)
+				return
+			}
+			if actualMEM != test.expectedMEM {
+				t.Errorf("[%s mem] expected(%d) differ (got: %d)", test.description, test.expectedMEM, actualMEM)
+				return
+			}
+		})
+	}
 }
 
 func TestGetPodCount(t *testing.T) {

@@ -15,8 +15,14 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	fake "k8s.io/client-go/kubernetes/fake"
+	core "k8s.io/client-go/testing"
+	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
+	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
+	metricsapiv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
+	fakemetrics "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 )
 
 // test node object
@@ -32,12 +38,31 @@ var testNodes = []v1.Node{
 				v1.ResourceMemory: *resource.NewQuantity(4000, resource.DecimalSI),
 				v1.ResourcePods:   *resource.NewQuantity(110, resource.DecimalSI),
 			},
+			Conditions: []v1.NodeCondition{
+				{
+					Type:   v1.NodeReady,
+					Status: v1.ConditionTrue,
+				},
+			},
 		},
 	},
 	{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "node2",
 			Labels: map[string]string{"hostname": "node1"},
+		},
+		Status: v1.NodeStatus{
+			Allocatable: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(8000, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(8000, resource.DecimalSI),
+				v1.ResourcePods:   *resource.NewQuantity(110, resource.DecimalSI),
+			},
+			Conditions: []v1.NodeCondition{
+				{
+					Type:   v1.NodeReady,
+					Status: v1.ConditionFalse,
+				},
+			},
 		},
 	},
 }
@@ -50,6 +75,7 @@ var testPods = []v1.Pod{
 			Namespace: "default",
 		},
 		Status: v1.PodStatus{
+			PodIP: "1.2.3.4",
 			Phase: v1.PodRunning,
 		},
 		Spec: v1.PodSpec{
@@ -78,7 +104,7 @@ var testPods = []v1.Pod{
 			Namespace: "default",
 		},
 		Status: v1.PodStatus{
-			PodIP: "1.2.3.4",
+			PodIP: "2.3.4.5",
 			Phase: v1.PodRunning,
 		},
 		Spec: v1.PodSpec{
@@ -111,7 +137,7 @@ var testPods = []v1.Pod{
 			Namespace: "awesome-ns",
 		},
 		Status: v1.PodStatus{
-			PodIP: "2.3.4.5",
+			PodIP: "3.4.5.6",
 			Phase: v1.PodRunning,
 		},
 		Spec: v1.PodSpec{
@@ -140,6 +166,53 @@ var testPods = []v1.Pod{
 	},
 }
 
+var testPodMetrics = &metricsapiv1beta1.PodMetricsList{
+	Items: []metricsapiv1beta1.PodMetrics{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pod1",
+				Namespace: "default",
+				Labels: map[string]string{
+					"key": "value",
+				},
+			},
+			Timestamp: metav1.Now(),
+			Containers: []metricsapiv1beta1.ContainerMetrics{
+				{
+					Name: "container1",
+					Usage: v1.ResourceList{
+						v1.ResourceCPU:    *resource.NewMilliQuantity(10, resource.DecimalSI),
+						v1.ResourceMemory: *resource.NewQuantity(10, resource.DecimalSI),
+					},
+				},
+			},
+		},
+	},
+}
+
+var testNodeMetrics = &metricsapiv1beta1.NodeMetricsList{
+	Items: []metricsapiv1beta1.NodeMetrics{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "node1",
+			},
+			Usage: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(1024, resource.DecimalSI),
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "node2",
+			},
+			Usage: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(200, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(2048, resource.DecimalSI),
+			},
+		},
+	},
+}
+
 func TestNewFreeOptions(t *testing.T) {
 	streams := genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
 
@@ -162,7 +235,8 @@ func TestNewFreeOptions(t *testing.T) {
 		pod:                false,
 		emojiStatus:        false,
 		table:              table.NewOutputTable(os.Stdout),
-		header:             "default",
+		noHeaders:          false,
+		noMetrics:          false,
 	}
 
 	actual := NewFreeOptions(streams)
@@ -174,7 +248,13 @@ func TestNewFreeOptions(t *testing.T) {
 
 func TestNewCmdFree(t *testing.T) {
 
+	cmdtesting.InitTestErrorHandler(t)
+	tf := cmdtesting.NewTestFactory()
+	defer tf.Cleanup()
+	tf.ClientConfigVal = cmdtesting.DefaultClientConfig()
+
 	rootCmd := NewCmdFree(
+		tf,
 		genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr},
 		"v0.0.1",
 		"abcd123",
@@ -223,101 +303,61 @@ func TestNewCmdFree(t *testing.T) {
 			return
 		}
 	})
-
-	// RunE Validation error 1
-	t.Run("RunE validation error 1", func(t *testing.T) {
-
-		c := NewCmdFree(
-			genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr},
-			"v0.0.1",
-			"abcd123",
-			"1234567890",
-		)
-
-		err := c.ParseFlags([]string{"--crit-threshold=5"})
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-			return
-		}
-
-		rerr := c.RunE(c, []string{})
-		if rerr == nil {
-			t.Errorf("unexpected error: should return error")
-			return
-		}
-
-		expected := "can not set critical threshold less than warn threshold (warn:25 crit:5)"
-		if rerr.Error() != expected {
-			t.Errorf("expected(%s) differ (got: %s)", expected, rerr.Error())
-			return
-		}
-	})
-
-	// RunE Validation error 2
-	t.Run("RunE validation error 2", func(t *testing.T) {
-
-		c := NewCmdFree(
-			genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr},
-			"v0.0.1",
-			"abcd123",
-			"1234567890",
-		)
-
-		err := c.ParseFlags([]string{"--header", "hogehoge"})
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-			return
-		}
-
-		rerr := c.RunE(c, []string{})
-		if rerr == nil {
-			t.Errorf("unexpected error: should return error")
-			return
-		}
-
-		expected := "invalid header option: hogehoge"
-		if rerr.Error() != expected {
-			t.Errorf("expected(%s) differ (got: %s)", expected, rerr.Error())
-			return
-		}
-	})
 }
 
-func TestPrepare(t *testing.T) {
+func TestComplete(t *testing.T) {
 
-	t.Run("prepare", func(t *testing.T) {
+	cmdtesting.InitTestErrorHandler(t)
+	tf := cmdtesting.NewTestFactory()
+	defer tf.Cleanup()
+	tf.ClientConfigVal = cmdtesting.DefaultClientConfig()
+
+	rootCmd := NewCmdFree(
+		tf,
+		genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr},
+		"v0.0.1",
+		"abcd123",
+		"1234567890",
+	)
+
+	kubeConfigFlags := genericclioptions.NewConfigFlags(true).WithDeprecatedPasswordFlag()
+	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(kubeConfigFlags)
+
+	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
+
+	t.Run("complete", func(t *testing.T) {
 
 		o := &FreeOptions{
 			configFlags: genericclioptions.NewConfigFlags(true),
 		}
 
-		if err := o.Prepare(); err != nil {
+		if err := o.Complete(f, rootCmd, []string{}); err != nil {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}
 	})
 
-	t.Run("prepare allnamespace", func(t *testing.T) {
+	t.Run("complete allnamespace", func(t *testing.T) {
 
 		o := &FreeOptions{
 			configFlags:   genericclioptions.NewConfigFlags(true),
 			allNamespaces: true,
 		}
 
-		if err := o.Prepare(); err != nil {
+		if err := o.Complete(f, rootCmd, []string{}); err != nil {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}
 	})
 
-	t.Run("prepare specific namespace", func(t *testing.T) {
+	t.Run("complete specific namespace", func(t *testing.T) {
 
 		o := &FreeOptions{
 			configFlags: genericclioptions.NewConfigFlags(true),
 		}
 		*o.configFlags.Namespace = "awesome-ns"
 
-		if err := o.Prepare(); err != nil {
+		if err := o.Complete(f, rootCmd, []string{}); err != nil {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}
@@ -341,24 +381,9 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
-	t.Run("validate header option", func(t *testing.T) {
-
-		o := &FreeOptions{
-			header: "foobar",
-		}
-
-		err := o.Validate()
-		expected := "invalid header option: foobar"
-		if err.Error() != expected {
-			t.Errorf("unexpected error: %v", err)
-			return
-		}
-	})
-
 	t.Run("validate success", func(t *testing.T) {
 
 		o := &FreeOptions{
-			header:        "default",
 			warnThreshold: 25,
 			critThreshold: 50,
 		}
@@ -375,29 +400,28 @@ func TestRun(t *testing.T) {
 	var tests = []struct {
 		description string
 		args        []string
-		list        bool
+		listOption  bool
 		expected    []string
-		expectedErr error
 	}{
 		{
 			"default free",
 			[]string{},
 			false,
 			[]string{
-				"node1   NotReady   1     4     25%   1K    4K    25%",
+				"NAME    STATUS   CPU/use   CPU/req   CPU/lim   CPU/alloc   CPU/use%   CPU/req%   CPU/lim%   MEM/use   MEM/req   MEM/lim   MEM/alloc   MEM/use%   MEM/req%   MEM/lim%",
+				"node1   Ready    100m      1         2         4           2%         25%        50%        1K        1K        2K        4K          25%        25%        50%",
 				"",
 			},
-			nil,
 		},
 		{
-			"default free --list",
+			"defaul free --list",
 			[]string{},
 			true,
 			[]string{
-				"node1   pod1         Running   default   container1   1     2     1K    2K",
+				"NODE NAME   NAMESPACE   POD NAME   POD AGE     POD IP    POD STATUS   CONTAINER    CPU/use   CPU/req   CPU/lim   MEM/use   MEM/req   MEM/lim",
+				"node1       default     pod1       <unknown>   1.2.3.4   Running      container1   10m       1         2         0K        1K        2K",
 				"",
 			},
-			nil,
 		},
 	}
 
@@ -406,18 +430,24 @@ func TestRun(t *testing.T) {
 
 			fakeNodeClient := fake.NewSimpleClientset(&testNodes[0])
 			fakePodClient := fake.NewSimpleClientset(&testPods[0])
+			fakeMetricsNodeClient := prepareTestNodeMetricsClient()
+			fakeMetricsPodClient := prepareTestPodMetricsClient()
 
 			buffer := &bytes.Buffer{}
 			o := &FreeOptions{
-				nocolor:    true,
-				table:      table.NewOutputTable(buffer),
-				list:       test.list,
-				nodeClient: fakeNodeClient.CoreV1().Nodes(),
-				podClient:  fakePodClient.CoreV1().Pods("default"),
-				header:     "none",
+				nocolor:           true,
+				table:             table.NewOutputTable(buffer),
+				list:              test.listOption,
+				nodeClient:        fakeNodeClient.CoreV1().Nodes(),
+				podClient:         fakePodClient.CoreV1().Pods("default"),
+				metricsPodClient:  fakeMetricsPodClient.MetricsV1beta1().PodMetricses("default"),
+				metricsNodeClient: fakeMetricsNodeClient.MetricsV1beta1().NodeMetricses(),
 			}
 
-			if err := o.Run(test.args); !reflect.DeepEqual(err, test.expectedErr) {
+			o.prepareFreeTableHeader()
+			o.prepareListTableHeader()
+
+			if err := o.Run(test.args); err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
@@ -427,7 +457,6 @@ func TestRun(t *testing.T) {
 				t.Errorf("expected(%s) differ (got: %s)", e, buffer.String())
 				return
 			}
-
 		})
 	}
 }
@@ -435,117 +464,113 @@ func TestRun(t *testing.T) {
 func TestPrepareFreeTableHeader(t *testing.T) {
 
 	colorStatus := "STATUS"
-	colorCPUp := "CPU/%"
-	colorMEMp := "MEM/%"
+	colorCPUreqP := "CPU/req%"
+	colorCPUlimP := "CPU/lim%"
+	colorMEMreqP := "MEM/req%"
+	colorMEMlimP := "MEM/lim%"
 	util.DefaultColor(&colorStatus)
-	util.DefaultColor(&colorCPUp)
-	util.DefaultColor(&colorMEMp)
+	util.DefaultColor(&colorCPUreqP)
+	util.DefaultColor(&colorCPUlimP)
+	util.DefaultColor(&colorMEMreqP)
+	util.DefaultColor(&colorMEMlimP)
 
 	var tests = []struct {
 		description string
 		listPod     bool
 		nocolor     bool
-		header      string
+		noheader    bool
+		nometrics   bool
 		expected    []string
 	}{
 		{
 			"default header",
 			false,
 			true,
-			"default",
+			false,
+			true,
 			[]string{
 				"NAME",
 				"STATUS",
 				"CPU/req",
+				"CPU/lim",
 				"CPU/alloc",
-				"CPU/%",
+				"CPU/req%",
+				"CPU/lim%",
 				"MEM/req",
+				"MEM/lim",
 				"MEM/alloc",
-				"MEM/%",
+				"MEM/req%",
+				"MEM/lim%",
 			},
 		},
 		{
-			"verbose header",
+			"default header with metrics",
 			false,
 			true,
-			"verbose",
+			false,
+			false,
 			[]string{
 				"NAME",
 				"STATUS",
-				"CPU requested",
-				"CPU allocatable",
-				"CPU %USED",
-				"Memory requested",
-				"Memory allocatable",
-				"Memory %USED",
+				"CPU/use",
+				"CPU/req",
+				"CPU/lim",
+				"CPU/alloc",
+				"CPU/use%",
+				"CPU/req%",
+				"CPU/lim%",
+				"MEM/use",
+				"MEM/req",
+				"MEM/lim",
+				"MEM/alloc",
+				"MEM/use%",
+				"MEM/req%",
+				"MEM/lim%",
 			},
-		},
-		{
-			"none header",
-			false,
-			true,
-			"none",
-			[]string{},
 		},
 		{
 			"default header with --pod",
 			true,
 			true,
-			"default",
+			false,
+			true,
 			[]string{
 				"NAME",
 				"STATUS",
 				"CPU/req",
+				"CPU/lim",
 				"CPU/alloc",
-				"CPU/%",
+				"CPU/req%",
+				"CPU/lim%",
 				"MEM/req",
+				"MEM/lim",
 				"MEM/alloc",
-				"MEM/%",
+				"MEM/req%",
+				"MEM/lim%",
 				"PODS",
 				"PODS/alloc",
 				"CONTAINERS",
 			},
 		},
 		{
-			"verbose header with --pod",
-			true,
-			true,
-			"verbose",
-			[]string{
-				"NAME",
-				"STATUS",
-				"CPU requested",
-				"CPU allocatable",
-				"CPU %USED",
-				"Memory requested",
-				"Memory allocatable",
-				"Memory %USED",
-				"PODS",
-				"PODS allocation",
-				"CONTAINERS",
-			},
-		},
-		{
-			"none header with --pod",
-			true,
-			true,
-			"none",
-			[]string{},
-		},
-		{
 			"default header with color",
 			false,
 			false,
-			"default",
+			false,
+			true,
 			[]string{
 				"NAME",
 				colorStatus,
 				"CPU/req",
+				"CPU/lim",
 				"CPU/alloc",
-				colorCPUp,
+				colorCPUreqP,
+				colorCPUlimP,
 				"MEM/req",
+				"MEM/lim",
 				"MEM/alloc",
-				colorMEMp,
+				colorMEMreqP,
+				colorMEMlimP,
 			},
 		},
 	}
@@ -553,9 +578,10 @@ func TestPrepareFreeTableHeader(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
 			o := &FreeOptions{
-				pod:     test.listPod,
-				header:  test.header,
-				nocolor: test.nocolor,
+				pod:       test.listPod,
+				noHeaders: test.noheader,
+				noMetrics: test.nometrics,
+				nocolor:   test.nocolor,
 			}
 			o.prepareFreeTableHeader()
 
@@ -581,20 +607,23 @@ func TestPrepareListTableHeader(t *testing.T) {
 		description string
 		listImage   bool
 		nocolor     bool
-		header      string
+		noheader    bool
+		nometrics   bool
 		expected    []string
 	}{
 		{
 			"default header",
 			false,
 			true,
-			"default",
+			false,
+			true,
 			[]string{
 				"NODE NAME",
-				"POD",
+				"NAMESPACE",
+				"POD NAME",
+				"POD AGE",
 				"POD IP",
 				"POD STATUS",
-				"NAMESPACE",
 				"CONTAINER",
 				"CPU/req",
 				"CPU/lim",
@@ -603,41 +632,40 @@ func TestPrepareListTableHeader(t *testing.T) {
 			},
 		},
 		{
-			"verbose header",
+			"default header with metrics",
 			false,
 			true,
-			"verbose",
+			false,
+			false,
 			[]string{
 				"NODE NAME",
-				"POD",
+				"NAMESPACE",
+				"POD NAME",
+				"POD AGE",
 				"POD IP",
 				"POD STATUS",
-				"NAMESPACE",
 				"CONTAINER",
-				"CPU requested",
-				"CPU limit",
-				"MEM requested",
-				"MEM limit",
+				"CPU/use",
+				"CPU/req",
+				"CPU/lim",
+				"MEM/use",
+				"MEM/req",
+				"MEM/lim",
 			},
-		},
-		{
-			"none header",
-			false,
-			true,
-			"none",
-			[]string{},
 		},
 		{
 			"default header with --list-image",
 			true,
 			true,
-			"default",
+			false,
+			true,
 			[]string{
 				"NODE NAME",
-				"POD",
+				"NAMESPACE",
+				"POD NAME",
+				"POD AGE",
 				"POD IP",
 				"POD STATUS",
-				"NAMESPACE",
 				"CONTAINER",
 				"CPU/req",
 				"CPU/lim",
@@ -647,42 +675,18 @@ func TestPrepareListTableHeader(t *testing.T) {
 			},
 		},
 		{
-			"verbose header with --list-image",
-			true,
-			true,
-			"verbose",
-			[]string{
-				"NODE NAME",
-				"POD",
-				"POD IP",
-				"POD STATUS",
-				"NAMESPACE",
-				"CONTAINER",
-				"CPU requested",
-				"CPU limit",
-				"MEM requested",
-				"MEM limit",
-				"IMAGE",
-			},
-		},
-		{
-			"none header with --list-image",
-			true,
-			true,
-			"none",
-			[]string{},
-		},
-		{
 			"default header with color",
 			false,
 			false,
-			"default",
+			false,
+			true,
 			[]string{
 				"NODE NAME",
-				"POD",
+				"NAMESPACE",
+				"POD NAME",
+				"POD AGE",
 				"POD IP",
 				colorStatus,
-				"NAMESPACE",
 				"CONTAINER",
 				"CPU/req",
 				"CPU/lim",
@@ -696,7 +700,8 @@ func TestPrepareListTableHeader(t *testing.T) {
 		t.Run(test.description, func(t *testing.T) {
 			o := &FreeOptions{
 				listContainerImage: test.listImage,
-				header:             test.header,
+				noHeaders:          test.noheader,
+				noMetrics:          test.nometrics,
 				nocolor:            test.nocolor,
 			}
 			o.prepareListTableHeader()
@@ -713,189 +718,6 @@ func TestPrepareListTableHeader(t *testing.T) {
 		})
 	}
 
-}
-
-func TestShowFree(t *testing.T) {
-
-	var tests = []struct {
-		description string
-		pod         bool
-		namespace   string
-		expected    []string
-		expectedErr error
-	}{
-		{
-			"default free",
-			false,
-			"default",
-			[]string{
-				"node1   NotReady   1     4     25%   1K    4K    25%",
-				"",
-			},
-			nil,
-		},
-		{
-			"default free --pod",
-			true,
-			"default",
-			[]string{
-				"node1   NotReady   1     4     25%   1K    4K    25%   1     110   1",
-				"",
-			},
-			nil,
-		},
-		{
-			"awesome-ns free",
-			true,
-			"awesome-ns",
-			[]string{
-				"node1   NotReady   200m   4     5%    0K    4K    7%    1     110   2",
-				"",
-			},
-			nil,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.description, func(t *testing.T) {
-
-			fakeNodeClient := fake.NewSimpleClientset(&testNodes[0])
-			fakePodClient := fake.NewSimpleClientset(&testPods[0], &testPods[2])
-
-			buffer := &bytes.Buffer{}
-			o := &FreeOptions{
-				nocolor:    true,
-				table:      table.NewOutputTable(buffer),
-				list:       false,
-				pod:        test.pod,
-				nodeClient: fakeNodeClient.CoreV1().Nodes(),
-				podClient:  fakePodClient.CoreV1().Pods(test.namespace),
-				header:     "none",
-			}
-
-			if err := o.showFree([]v1.Node{testNodes[0]}); err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
-
-			e := strings.Join(test.expected, "\n")
-			if buffer.String() != e {
-				t.Errorf("expected(%s) differ (got: %s)", e, buffer.String())
-				return
-			}
-
-		})
-	}
-
-	t.Run("Allnamespace", func(t *testing.T) {
-
-		fakeNodeClient := fake.NewSimpleClientset(&testNodes[0])
-		fakePodClient := fake.NewSimpleClientset(&testPods[0], &testPods[1], &testPods[2])
-
-		buffer := &bytes.Buffer{}
-		o := &FreeOptions{
-			nocolor:       true,
-			table:         table.NewOutputTable(buffer),
-			list:          false,
-			pod:           false,
-			nodeClient:    fakeNodeClient.CoreV1().Nodes(),
-			podClient:     fakePodClient.CoreV1().Pods(""),
-			allNamespaces: true,
-			header:        "none",
-		}
-
-		if err := o.showFree([]v1.Node{testNodes[0]}); err != nil {
-			t.Errorf("unexpected error: %v", err)
-			return
-		}
-
-		expected := []string{
-			"node1   NotReady   1700m   4     42%   2K    4K    57%",
-			"",
-		}
-		e := strings.Join(expected, "\n")
-		if buffer.String() != e {
-			t.Errorf("expected(%s) differ (got: %s)", e, buffer.String())
-			return
-		}
-
-	})
-}
-
-func TestListPodsOnNode(t *testing.T) {
-
-	var tests = []struct {
-		description   string
-		listContainer bool
-		listAll       bool
-		expected      []string
-	}{
-		{
-			"list container: false, list all: false",
-			false,
-			false,
-			[]string{
-				"node2   pod2   1.2.3.4   Running   default   container2a   500m   500m   1K    1K",
-				"",
-			},
-		},
-		{
-			"list container: true, list all: false",
-			true,
-			false,
-			[]string{
-				"node2   pod2   1.2.3.4   Running   default   container2a   500m   500m   1K    1K    nginx:latest",
-				"",
-			},
-		},
-		{
-			"list container: false, list all: true",
-			false,
-			true,
-			[]string{
-				"node2   pod2   1.2.3.4   Running   default   container2a   500m   500m   1K    1K",
-				"node2   pod2   1.2.3.4   Running   default   container2b   -      -      -     -",
-				"",
-			},
-		},
-		{
-			"list container: true, list all: true",
-			true,
-			true,
-			[]string{
-				"node2   pod2   1.2.3.4   Running   default   container2a   500m   500m   1K    1K    nginx:latest",
-				"node2   pod2   1.2.3.4   Running   default   container2b   -      -      -     -     busybox:latest",
-				"",
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.description, func(t *testing.T) {
-			buffer := &bytes.Buffer{}
-			fakeClient := fake.NewSimpleClientset(&testPods[1])
-			o := &FreeOptions{
-				table:              table.NewOutputTable(buffer),
-				podClient:          fakeClient.CoreV1().Pods(""),
-				header:             "none",
-				nocolor:            true,
-				listContainerImage: test.listContainer,
-				listAll:            test.listAll,
-			}
-
-			if err := o.listPodsOnNode([]v1.Node{testNodes[1]}); err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
-
-			expected := strings.Join(test.expected, "\n")
-			actual := buffer.String()
-			if actual != expected {
-				t.Errorf("[%s] expected(%s) differ (got: %s)", test.description, expected, actual)
-				return
-			}
-		})
-	}
 }
 
 func TestToUnit(t *testing.T) {
@@ -1066,4 +888,20 @@ func executeCommandC(root *cobra.Command, args ...string) (c *cobra.Command, out
 	c, err = root.ExecuteC()
 
 	return c, buf.String(), err
+}
+
+func prepareTestNodeMetricsClient() *fakemetrics.Clientset {
+	fakeMetricsClient := &fakemetrics.Clientset{}
+	fakeMetricsClient.AddReactor("get", "nodes", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		return true, &testNodeMetrics.Items[0], nil
+	})
+	return fakeMetricsClient
+}
+
+func prepareTestPodMetricsClient() *fakemetrics.Clientset {
+	fakeMetricsClient := &fakemetrics.Clientset{}
+	fakeMetricsClient.AddReactor("list", "pods", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		return true, testPodMetrics, nil
+	})
+	return fakeMetricsClient
 }
