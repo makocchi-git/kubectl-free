@@ -14,7 +14,7 @@ builds:
       - windows
     goarch:
       - amd64
-    main: cmd/kubectl-free/root.go
+    main: cmd/kubectl-free/kubectl-free.go
     binary: kubectl-free
 archives:
   -
