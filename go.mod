@@ -8,16 +8,13 @@ require (
 	github.com/docker/docker v0.0.0-00010101000000-000000000000 // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/fatih/camelcase v1.0.0 // indirect
-	github.com/gogo/protobuf v1.1.1 // indirect
+	github.com/golangci/golangci-lint v0.0.0-00010101000000-000000000000 // indirect
 	github.com/gookit/color v1.1.7
 	github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de // indirect
 	github.com/mitchellh/go-wordwrap v1.0.0 // indirect
 	github.com/russross/blackfriday v0.0.0-00010101000000-000000000000 // indirect
-	github.com/sirupsen/logrus v1.0.5 // indirect
 	github.com/spf13/cobra v0.0.2
 	github.com/spf13/pflag v1.0.3
-	gopkg.in/airbrake/gobrake.v2 v2.0.9 // indirect
-	gopkg.in/gemnasium/logrus-airbrake-hook.v2 v2.1.2 // indirect
 	gotest.tools v2.2.0+incompatible // indirect
 	k8s.io/api v0.0.0-20190726022912-69e1bce1dad5
 	k8s.io/apimachinery v0.0.0-20190726022757-641a75999153
