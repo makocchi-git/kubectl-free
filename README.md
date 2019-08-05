@@ -11,21 +11,22 @@ Print pod resources/limits usage on Kubernetes node(s) like a linux "free" comma
 
 ```shell
 $ kubectl free
-NAME    STATUS   CPU/req   CPU/alloc   CPU/%   MEM/req   MEM/alloc   MEM/%
-node1   Ready    350m      3600m       9%      73400K    5943865K    1%
-node2   Ready    553m      3600m       15%     216006K   5943865K    3%
-node3   Ready    455m      2           22%     52428K    3503149K    1%
+NAME    STATUS   CPU/req   CPU/lim   CPU/alloc   CPU/req%   CPU/lim%   MEM/req    MEM/lim    MEM/alloc   MEM/req%   MEM/lim%
+node1   Ready    704m      304m      3600m       19%        8%         807403K    375390K    5943857K    13%        6%
+node2   Ready    350m      2100m     3600m       9%         58%        260046K    1304428K   5943857K    4%         21%
+node3   Ready    2030m     12900m    3600m       56%        358%       3736783K   8347396K   5943865K    62%        140%
 ```
 
 And list containers of pod on Kubernetes node(s).
 
 ```shell
-$ kubectl free --list node1 --namespace kube-system
-NODE NAME   POD                                   POD IP        POD STATUS   NAMESPACE     CONTAINER            CPU/req   CPU/lim   MEM/req   MEM/lim
-node1       calico-node-sml6z                     10.8.2.87     Running      kube-system   calico-node          250m      -         -         -
-node1       coredns-5695fb77c8-knc6d              10.112.1.3    Running      kube-system   coredns              100m      -         73400K    178257K
-node1       kube-state-metrics-5f4459f5b8-7hrwz   10.112.1.42   Running      kube-system   kube-state-metrics   103m      103m      111149K   111149K
-node1       kube-state-metrics-5f4459f5b8-7hrwz   10.112.1.42   Running      kube-system   addon-resizer        100m      100m      31457K    31457K
+$ kubectl free --list node1 --all-namespaces
+NODE NAME  NAMESPACE     POD NAME                               POD AGE   POD IP       POD STATUS   CONTAINER            CPU/use   CPU/req   CPU/lim   MEM/use   MEM/req   MEM/lim
+node1      default       nginx-7cdbd8cdc9-q2bbg                 3d22h     10.112.2.43  Running      nginx                2m        100m      2         27455K    134217K   1073741K
+node1      kube-system   coredns-69dc677c56-chfcm               9d        10.112.3.2   Running      coredns              3m        100m      -         17420K    73400K    178257K
+node1      kube-system   kube-flannel-ds-amd64-4b4s2            9d        10.1.2.3     Running      kube-flannel         4m        100m      100m      13877K    52428K    52428K
+node1      kube-system   kube-state-metrics-69bcc79474-wvmmk    9d        10.112.3.3   Running      kube-state-metrics   11m       104m      104m      33382K    113246K   113246K
+node1      kube-system   kube-state-metrics-69bcc79474-wvmmk    9d        10.112.3.3   Running      addon-resizer        1m        100m      100m      8511K     31457K    31457K
 ...
 ```
 
@@ -76,8 +77,10 @@ kubectl free --list --emoji
 
 ## Notice
 
-This plugin shows just sum of requested(limited) resources, **not a real usage**.  
-I recommend to use `kubectl free` with `kubectl top`.
+~~This plugin shows just sum of requested(limited) resources, **not a real usage**.  
+I recommend to use `kubectl free` with `kubectl top`.~~
+
+kubectl free v0.2.0 supports printing real usages from metrics server in a target cluster.
 
 ## License
 
