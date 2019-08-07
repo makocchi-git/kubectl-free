@@ -32,10 +32,14 @@ node1      kube-system   kube-state-metrics-69bcc79474-wvmmk    9d        10.112
 
 ## Install
 
+`kubectl-free` binary is available at [release page](https://github.com/makocchi-git/kubectl-free/releases) or you can make binary.
+
 ```shell
 $ make
 $ mv _output/kubectl-free /usr/local/bin/.
+```
 
+```
 # Happy free time!
 $ kubectl free
 ```
